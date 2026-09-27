@@ -1,1 +1,21 @@
-Test
+local placeId = game.PlaceId
+
+local games = {
+    [74629631798007]  = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Pets%20Universe",
+    [120475074479690] = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Steal%20From%20The%20Rich",
+    [88047783411976] = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Open%20Sea%20For%20Animals"
+}
+
+local scriptUrl = games[placeId]
+
+if scriptUrl then
+    local success, result = pcall(function()
+        return loadstring(game:HttpGet(scriptUrl))()
+    end)
+    
+    if not success then
+        warn("Failed to load script: " .. tostring(result))
+    end
+else
+    warn("Unsupported game ID: " .. tostring(placeId))
+end
