@@ -3,7 +3,7 @@ local placeId = game.PlaceId
 local games = {
     [74629631798007]  = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Pets%20Universe",
     [120475074479690] = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Steal%20From%20The%20Rich",
-    [88047783411976] = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Open%20Sea%20For%20Animals"
+    [88047783411976] = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Open%20Sea%20For%20Animals",
     [124216119978534] = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Ride%20A%20Pet"
 }
 
