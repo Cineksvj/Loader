@@ -1,7 +1,8 @@
--- Corvus universal loader: picks the hub for the current game and counts players.
--- Player counts go to ONE Discord message that is edited (never a new message per player):
---   runs today and in total per game, plus "active now" (players seen in the last 10 minute window).
--- No usernames or ids are sent, only the game name.
+-- Corvus universal loader: picks the hub for the current game and keeps a live dashboard in ONE Discord message.
+-- The dashboard data lives in the message's attachment (corvus.json); the message itself shows only pretty embeds:
+--   overview (online now, players and runs today, totals), every game, the players online right now (name,
+--   game, executor, session time, the hub's own status line) and the executors used today.
+-- Players with Anonymous Mode on (Info tab) are listed as "Anonymous".
 -- Filled in by tools/github_upload.py when the loader is uploaded (raw URL of the repo that holds the hubs).
 local Repo = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/"
 local Games = {
@@ -13,17 +14,18 @@ local Games = {
 	[124216119978534] = { name = "Ride A Pet", file = "Ride%20A%20Pet" },
 	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
 }
--- Stats: a webhook in a private channel and the id of the message it edits (see Loader/README.md).
 local StatsWebhook = "https://discord.com/api/webhooks/1556414053159542787/xZao0O7GEipl7_eD2aUWua233oziMB-SUZIQFXNZ2sl7hnRHgLKDvGWu_qDZY_9Aa7Gl"
 local StatsMessage = "1556415243478114457"
 
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
 local Env = (getgenv and getgenv()) or _G
 local entry = Games[game.PlaceId]
 
 local Stats = {}
 do
-	local Window = 600
+	local Online = 12 * 60 -- a player counts as online for 12 minutes after their last heartbeat
+	local Beat = 5 * 60 -- heartbeat every 5 minutes
 	local function httpRequest(options)
 		local fn = (typeof(syn) == "table" and syn.request) or (typeof(http) == "table" and http.request) or http_request or request
 		if type(fn) ~= "function" then
@@ -32,24 +34,41 @@ do
 		local ok, response = pcall(fn, options)
 		return if ok then response else nil
 	end
-	local function url()
+	local function decode(text)
+		local ok, value = pcall(HttpService.JSONDecode, HttpService, text or "")
+		return if ok and type(value) == "table" then value else nil
+	end
+	local function messageUrl()
 		return StatsWebhook .. "/messages/" .. StatsMessage
 	end
 	function Stats.enabled()
 		return StatsWebhook ~= "" and StatsMessage ~= ""
 	end
+	-- Reads the data file attached to the message (or the old JSON-in-content format).
 	function Stats.read()
-		local response = httpRequest({ Url = url(), Method = "GET" })
+		local response = httpRequest({ Url = messageUrl(), Method = "GET" })
 		if not response or response.StatusCode ~= 200 then
 			return nil
 		end
-		local ok, message = pcall(HttpService.JSONDecode, HttpService, response.Body)
-		if not ok or type(message) ~= "table" then
+		local message = decode(response.Body)
+		if not message then
 			return nil
 		end
-		local json = string.match(tostring(message.content or ""), "```json\n(.-)\n```")
-		local okData, data = pcall(HttpService.JSONDecode, HttpService, json or "{}")
-		return if okData and type(data) == "table" then data else {}
+		local data
+		local attachment = type(message.attachments) == "table" and message.attachments[1]
+		if attachment and attachment.url then
+			local file = httpRequest({ Url = attachment.url, Method = "GET" })
+			data = file and file.StatusCode == 200 and decode(file.Body)
+		end
+		if not data then
+			local old = decode(string.match(tostring(message.content or ""), "```json\n(.-)\n```") or "{}") or {}
+			data = { games = old.games or old }
+		end
+		data.games = data.games or {}
+		data.players = data.players or {}
+		data.today = data.today or {}
+		data.ever = data.ever or {}
+		return data
 	end
 	local function short(n)
 		n = tonumber(n) or 0
@@ -58,128 +77,245 @@ do
 		elseif n >= 1e4 then
 			return string.format("%.1fK", n / 1e3)
 		end
-		return tostring(math.floor(n))
+		return tostring(math.floor(n + 0.5))
 	end
-	local function activeOf(g, window)
-		if g.w == window then
-			return math.max(g.a or 0, g.p or 0)
-		elseif g.w == window - 1 then
-			return g.a or 0
+	local function duration(seconds)
+		seconds = math.max(0, math.floor(seconds))
+		if seconds >= 3600 then
+			return string.format("%dh %02dm", seconds // 3600, (seconds % 3600) // 60)
 		end
-		return 0
+		return string.format("%dm", math.max(1, seconds // 60))
 	end
-	function Stats.write(data)
-		local window = math.floor(os.time() / Window)
+	local function bar(value, max)
+		local filled = if max > 0 then math.floor(value / max * 10 + 0.5) else 0
+		return string.rep("▰", filled) .. string.rep("▱", 10 - filled)
+	end
+	local function count(t)
+		local n = 0
+		for _ in pairs(t or {}) do
+			n += 1
+		end
+		return n
+	end
+	local function embeds(data)
+		local now = os.time()
+		local day = os.date("!%Y-%m-%d")
+		local online, perGame, perExec = {}, {}, {}
+		local onlineCount = 0
+		for _, p in pairs(data.players) do
+			if now - (p.l or 0) <= Online then
+				table.insert(online, p)
+				onlineCount += p.w or 1
+				perGame[p.g] = (perGame[p.g] or 0) + (p.w or 1)
+			end
+		end
+		table.sort(online, function(a, b)
+			return (a.s or 0) < (b.s or 0)
+		end)
+		local today = if data.today.day == day then data.today else { players = {}, runs = 0, execs = {} }
+		for _, exec in pairs(today.players or {}) do
+			perExec[exec] = (perExec[exec] or 0) + 1
+		end
+		local runsTotal = 0
+		for _, g in pairs(data.games) do
+			runsTotal += g.t or 0
+		end
+		local list = {}
+		local overview = {
+			title = "📊  Corvus Live Dashboard",
+			color = 6344854,
+			fields = {
+				{ name = "🟢 Online now", value = "**" .. short(onlineCount) .. "**", inline = true },
+				{ name = "👥 Players today", value = "**" .. short(count(today.players)) .. "**", inline = true },
+				{ name = "🚀 Runs today", value = "**" .. short(today.runs or 0) .. "**", inline = true },
+				{ name = "🌍 Players all time", value = "**" .. short(count(data.ever)) .. "**", inline = true },
+				{ name = "🔁 Runs all time", value = "**" .. short(runsTotal) .. "**", inline = true },
+				{ name = "🎮 Games", value = "**" .. tostring(count(data.games)) .. "**", inline = true },
+			},
+		}
+		table.insert(list, overview)
 		local names = {}
-		for name in pairs(data) do
+		for name in pairs(data.games) do
 			table.insert(names, name)
 		end
 		table.sort(names, function(a, b)
-			local x, y = activeOf(data[a], window), activeOf(data[b], window)
+			local x, y = perGame[a] or 0, perGame[b] or 0
 			if x ~= y then
 				return x > y
 			end
-			return a < b
+			return (data.games[a].t or 0) > (data.games[b].t or 0)
 		end)
-		local lines, active, today, total = {}, 0, 0, 0
-		local day = os.date("!%Y-%m-%d")
+		local gameFields = {}
 		for _, name in ipairs(names) do
-			local g = data[name]
-			local a = activeOf(g, window)
-			local d = if g.day == day then g.d or 0 else 0
-			active += a
-			today += d
-			total += g.t or 0
-			table.insert(lines, string.format("**%s**  ·  🟢 %s now  ·  %s today  ·  %s total", name, short(a), short(d), short(g.t)))
+			local g = data.games[name]
+			table.insert(gameFields, {
+				name = "🎮 " .. name,
+				value = string.format("🟢 **%s** online\n🚀 %s today\n🔁 %s total", short(perGame[name] or 0), short(if g.day == day then g.d or 0 else 0), short(g.t or 0)),
+				inline = true,
+			})
+			if #gameFields >= 24 then
+				break
+			end
 		end
-		local body = HttpService:JSONEncode({
-			content = "```json\n" .. HttpService:JSONEncode(data) .. "\n```",
-			embeds = {
-				{
-					title = "Corvus live players",
-					description = table.concat(lines, "\n"),
-					color = 6344854,
-					fields = {
-						{ name = "Active now", value = short(active), inline = true },
-						{ name = "Runs today (UTC)", value = short(today), inline = true },
-						{ name = "Runs total", value = short(total), inline = true },
-					},
-					footer = { text = "Active = players seen in the last 10 minutes" },
-					timestamp = DateTime.now():ToIsoDate(),
-				},
-			},
+		table.insert(list, { title = "🎮  Games", color = 3447003, fields = gameFields })
+		local rows = {}
+		for i, p in ipairs(online) do
+			if i > 15 then
+				table.insert(rows, string.format("*…and %d more*", #online - 15))
+				break
+			end
+			table.insert(rows, string.format(
+				"🟢 **%s** · %s · ⚙️ %s · ⏱ %s%s",
+				p.n or "Anonymous",
+				p.g or "?",
+				p.e or "?",
+				duration(now - (p.s or now)),
+				if p.i and p.i ~= "" then "\n└ " .. p.i else ""
+			))
+		end
+		table.insert(list, {
+			title = "👤  Online right now",
+			color = 5763719,
+			description = if #rows > 0 then table.concat(rows, "\n") else "*Nobody online right now*",
 		})
-		local response = httpRequest({ Url = url(), Method = "PATCH", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+		local execNames = {}
+		local maxExec = 0
+		for name, n in pairs(perExec) do
+			table.insert(execNames, name)
+			maxExec = math.max(maxExec, n)
+		end
+		table.sort(execNames, function(a, b)
+			return perExec[a] > perExec[b]
+		end)
+		local execRows = {}
+		for i, name in ipairs(execNames) do
+			if i > 10 then
+				break
+			end
+			table.insert(execRows, string.format("`%s` %s **%d**", bar(perExec[name], maxExec), name, perExec[name]))
+		end
+		table.insert(list, {
+			title = "⚙️  Executors today",
+			color = 15105570,
+			description = if #execRows > 0 then table.concat(execRows, "\n") else "*No data yet*",
+			footer = { text = "Online = active in the last 12 min · days in UTC · updated" },
+			timestamp = DateTime.now():ToIsoDate(),
+		})
+		return list
+	end
+	-- Saves the data as the message's attachment and redraws the embeds (one multipart PATCH).
+	function Stats.write(data)
+		local boundary = "CorvusBoundary" .. tostring(math.random(100000, 999999))
+		local payload = HttpService:JSONEncode({
+			content = "",
+			embeds = embeds(data),
+			attachments = { { id = 0, filename = "corvus.json" } },
+		})
+		local body = table.concat({
+			"--" .. boundary,
+			'Content-Disposition: form-data; name="payload_json"',
+			"Content-Type: application/json",
+			"",
+			payload,
+			"--" .. boundary,
+			'Content-Disposition: form-data; name="files[0]"; filename="corvus.json"',
+			"Content-Type: application/json",
+			"",
+			HttpService:JSONEncode(data),
+			"--" .. boundary .. "--",
+			"",
+		}, "\r\n")
+		local response = httpRequest({
+			Url = messageUrl(),
+			Method = "PATCH",
+			Headers = { ["Content-Type"] = "multipart/form-data; boundary=" .. boundary },
+			Body = body,
+		})
 		return response ~= nil and response.StatusCode == 200
 	end
-	-- With many players not everyone writes: each one writes with chance 1/k and counts k, which keeps the
-	-- message under Discord's rate limit (about 5 edits per 2 seconds per webhook).
-	function Stats.bump(name, isRun)
+	local function me()
+		local player = Players.LocalPlayer
+		local live = Env.CorvusLive
+		local anonymous = false
+		local info = nil
+		if type(live) == "table" then
+			local ok, value = pcall(live.anonymous)
+			anonymous = ok and value == true
+			local okInfo, text = pcall(live.info)
+			if okInfo and type(text) == "string" then
+				info = string.sub((string.gsub(text, "[\r\n]", " ")), 1, 80)
+			end
+		end
+		local executor = "Unknown"
+		pcall(function()
+			executor = tostring((identifyexecutor()))
+		end)
+		local key = string.format("%x", (player.UserId * 2654435761) % 4294967296)
+		local name = "Anonymous"
+		if not anonymous then
+			name = if player.DisplayName ~= player.Name then player.DisplayName .. " (@" .. player.Name .. ")" else "@" .. player.Name
+		end
+		return key, name, executor, info
+	end
+	-- With many players not everyone writes: each writes with chance 1/k and counts as k, which keeps the message
+	-- under Discord's limit of about 5 edits per 2 seconds per webhook.
+	function Stats.beat(game_, isRun)
 		local data = Stats.read()
 		if not data then
-			return nil
+			return
 		end
-		local window = math.floor(os.time() / Window)
-		local g = data[name] or { t = 0, d = 0, day = "", w = window, a = 0, p = 0 }
-		local k = math.max(1, math.floor(activeOf(g, window) / 20))
-		Stats.k = k
+		local now = os.time()
+		local onlineCount = 0
+		for key, p in pairs(data.players) do
+			if now - (p.l or 0) > Online then
+				data.players[key] = nil
+			else
+				onlineCount += p.w or 1
+			end
+		end
+		local k = math.max(1, math.floor(onlineCount / 25))
 		if math.random() > 1 / k then
-			return k
+			return
 		end
+		local key, name, executor, info = me()
+		local day = os.date("!%Y-%m-%d")
+		if data.today.day ~= day then
+			data.today = { day = day, players = {}, runs = 0 }
+		end
+		data.today.players = data.today.players or {}
+		local g = data.games[game_] or { t = 0, d = 0, day = day }
 		if isRun then
-			local day = os.date("!%Y-%m-%d")
 			if g.day ~= day then
 				g.day, g.d = day, 0
 			end
 			g.t = (g.t or 0) + k
 			g.d = (g.d or 0) + k
+			data.today.runs = (data.today.runs or 0) + k
 		end
-		if g.w ~= window then
-			g.p = if g.w == window - 1 then g.a or 0 else 0
-			g.a = 0
-			g.w = window
-		end
-		g.a = (g.a or 0) + k
-		data[name] = g
+		data.games[game_] = g
+		data.today.players[key] = executor
+		data.ever[key] = true
+		local p = data.players[key] or { s = Stats.started or now }
+		p.n, p.g, p.e, p.i, p.l, p.w = name, game_, executor, info, now, k
+		p.s = Stats.started or p.s
+		data.players[key] = p
 		Stats.write(data)
-		return k
 	end
-	function Stats.start(name)
+	function Stats.start(game_)
 		if not Stats.enabled() or Env.CorvusStatsRunning then
 			return
 		end
 		Env.CorvusStatsRunning = true
+		Stats.started = os.time()
 		task.spawn(function()
-			task.wait(math.random(5, 40))
-			pcall(Stats.bump, name, true)
-			local last = math.floor(os.time() / Window)
+			-- The first beat waits a bit so the hub can register its status line.
+			task.wait(math.random(15, 40))
+			pcall(Stats.beat, game_, true)
 			while true do
-				task.wait(30 + math.random() * 30)
-				local window = math.floor(os.time() / Window)
-				if window ~= last then
-					last = window
-					task.wait(math.random() * 120)
-					pcall(Stats.bump, name, false)
-				end
+				task.wait(Beat + math.random() * 60)
+				pcall(Stats.beat, game_, false)
 			end
 		end)
-	end
-	-- One time setup for the owner: run with getgenv().CorvusStatsSetup = true and a webhook filled in. It posts
-	-- the message and copies its id; paste it into StatsMessage.
-	if Env.CorvusStatsSetup == true and StatsWebhook ~= "" then
-		local response = httpRequest({
-			Url = StatsWebhook .. "?wait=true",
-			Method = "POST",
-			Headers = { ["Content-Type"] = "application/json" },
-			Body = HttpService:JSONEncode({ content = "```json\n{}\n```" }),
-		})
-		local ok, message = pcall(HttpService.JSONDecode, HttpService, response and response.Body or "")
-		if ok and type(message) == "table" and message.id then
-			pcall(setclipboard, tostring(message.id))
-			warn("[Corvus] Stats message id (copied): " .. tostring(message.id))
-		else
-			warn("[Corvus] Could not create the stats message")
-		end
 	end
 end
 
