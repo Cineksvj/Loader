@@ -1,6 +1,8 @@
 local placeId = game.PlaceId
 
 local games = {
+    [118805555015549]  = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/%2B1%20Loot%20To%20Forge",
+    [113290951185459]  = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Anime%20Dice",
     [114326934417838]  = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Break%20and%20Steal%20an%20Egg",
     [88047783411976] = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Open%20Sea%20For%20Animals",
     [74629631798007]  = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/Pets%20Universe",
