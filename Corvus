@@ -419,7 +419,10 @@ do
 		end
 		table.insert(execRows, "```")
 		-- Last 7 days (finished days plus today)
-		local week = table.clone(data.wk)
+		local week = {}
+		for i = math.max(1, #data.wk - 5), #data.wk do
+			table.insert(week, data.wk[i])
+		end
 		table.insert(week, { day = day, r = runsToday, u = playersToday })
 		while #week > 7 do
 			table.remove(week, 1)
@@ -561,7 +564,8 @@ do
 				local finished = { day = data.day, r = data.r or 0, u = math.floor(bitmapCount(data.tu, TodayBits) + 0.5) }
 				data.y = { r = finished.r, u = finished.u }
 				table.insert(data.wk, finished)
-				while #data.wk > 6 do
+				-- 30 days are kept (the desktop dashboard shows them all, Discord the last 7)
+				while #data.wk > 29 do
 					table.remove(data.wk, 1)
 				end
 				if not data.bd or finished.r > (data.bd.r or 0) then
