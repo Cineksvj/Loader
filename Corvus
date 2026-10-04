@@ -18,8 +18,8 @@ local Games = {
 	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
 }
 local StatsWebhook = "https://discord.com/api/webhooks/1556414053159542787/xZao0O7GEipl7_eD2aUWua233oziMB-SUZIQFXNZ2sl7hnRHgLKDvGWu_qDZY_9Aa7Gl"
-local StatsMessage = "1556420036825059422"
-local StatsData = "1556421601984127037"
+local StatsMessage = "1556425054563074070"
+local StatsData = "1556425055611781174"
 local Invite = "https://discord.gg/PdQvN2bDCu"
 
 local HttpService = game:GetService("HttpService")
