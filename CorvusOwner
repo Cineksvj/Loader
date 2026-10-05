@@ -40,6 +40,7 @@ local Invite ="https://discord.gg/PdQvN2bDCu"
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Env = (getgenv and getgenv()) or _G
+Env.CorvusHubRepo = Repo -- hubs read the Codes list from here
 local entry = Games[game.PlaceId]
 
 local Stats = {}
