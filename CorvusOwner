@@ -1,0 +1,593 @@
+-- Corvus universal loader: picks the hub for the current game and keeps a live dashboard in Discord.
+-- The stats are two webhook messages that are edited, never re-posted:
+--   StatsMessage (top): one short summary line (online, players today, runs today, record).
+--   StatsData (below): plain embeds whose hidden title/author links carry the whole state as base64.
+-- The real dashboard is the desktop app (tools/dashboard) that reads StatsData. Players with Anonymous Mode on
+-- (Info tab) show as "Anonymous". Unique and online players are counted with bitmaps of hashed user ids, so the
+-- stored state stays small no matter how many people play.
+-- Filled in by tools/github_upload.py when the loader is uploaded (raw URL of the repo that holds the hubs).
+local Repo = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/staging/"
+local Games = {
+	[118805555015549] = { name = "Loot To Forge", file = "%2B1%20Loot%20To%20Forge" },
+	[113290951185459] = { name = "Anime Dice", file = "Anime%20Dice" },
+	[114326934417838] = { name = "Break and Steal an Egg", file = "Break%20and%20Steal%20an%20Egg" },
+	[88047783411976] = { name = "Open Sea For Animals", file = "Open%20Sea%20For%20Animals" },
+	[74629631798007] = { name = "Pets Universe", file = "Pets%20Universe" },
+	[124216119978534] = { name = "Ride A Pet", file = "Ride%20A%20Pet" },
+	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
+	[185655149] = { name = "Welcome to Bloxburg", file = "Welcome%20to%20Bloxburg" },
+	[135621866300031] = { name = "Bizarre", file = "Bizarre" },
+	[118315378611589] = { name = "Voltline Electric Scooters", file = "Voltline%20Electric%20Scooters" },
+	[111543903102439] = { name = "+1 Stone Skipping", file = "%2B1%20Stone%20Skipping" },
+	[107778070777162] = { name = "Steal An Egg", file = "Steal%20An%20Egg" },
+}
+local StatsWebhook = (function(hex)
+	local key = "corvus"
+	local out = {}
+	for i = 1, #hex, 2 do
+		local index = (i - 1) // 2
+		out[#out + 1] = string.char(bit32.bxor(tonumber(string.sub(hex, i, i + 1), 16), string.byte(key, index % #key + 1)))
+	end
+	return table.concat(out)
+end)("0b1b060606494c40161f06100c1d1658161c0e4013061c5c140a101e1a1c081c5d474046555b41464542575f444142455a5b41435a05092a2b1d272a542b4333111255094643131f250a3545454657231941191d293e4a4f44462f1e21180f040836473d2c26190c5f2e42143a39201e2d032435104006472f")
+local StatsMessage = "1556430209979523195"
+local StatsData = "1556430211346599952"
+-- Stats worker (Cloudflare, see tools/dashboard/notes.md). Empty = Discord carrier only. With a URL the heartbeats go
+-- there and Discord is used only when the worker does not answer.
+local StatsUrl = "https://corvus-stats.corvushub.workers.dev"
+local Invite ="https://discord.gg/PdQvN2bDCu"
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local Env = (getgenv and getgenv()) or _G
+local entry = Games[game.PlaceId]
+
+local Stats = {}
+do
+	local Online = 12 * 60 -- a listed player stays "online" 12 minutes after the last heartbeat
+	local Beat = 5 * 60 -- heartbeat every 5 to 6 minutes
+	local Window = 6 * 60 -- online counting window (bitmaps of the current and the previous window)
+	local KeepPlayers = 25 -- players kept in the online list
+	local TodayBits, EverBits, OnlineBits = 2048, 4096, 1024
+	local function httpRequest(options)
+		local fn = (typeof(syn) == "table" and syn.request) or (typeof(http) == "table" and http.request) or http_request or request
+		if type(fn) ~= "function" then
+			return nil
+		end
+		local ok, response = pcall(fn, options)
+		return if ok then response else nil
+	end
+	local function decode(text)
+		local ok, value = pcall(HttpService.JSONDecode, HttpService, text or "")
+		return if ok and type(value) == "table" then value else nil
+	end
+	-- url-safe base64
+	local Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	local Index = {}
+	for i = 1, 64 do
+		Index[string.sub(Alphabet, i, i)] = i - 1
+	end
+	local function b64encode(text)
+		local out = {}
+		for i = 1, #text, 3 do
+			local a, b, c = string.byte(text, i, i + 2)
+			local n = a * 65536 + (b or 0) * 256 + (c or 0)
+			local chars = 2 + (if b then 1 else 0) + (if c then 1 else 0)
+			for j = 1, chars do
+				local v = math.floor(n / 64 ^ (4 - j)) % 64
+				out[#out + 1] = string.sub(Alphabet, v + 1, v + 1)
+			end
+		end
+		return table.concat(out)
+	end
+	local function b64decode(text)
+		local out = {}
+		for i = 1, #text, 4 do
+			local n, count = 0, 0
+			for j = 0, 3 do
+				local v = Index[string.sub(text, i + j, i + j)]
+				n = n * 64 + (v or 0)
+				if v then
+					count += 1
+				end
+			end
+			local bytes = { math.floor(n / 65536) % 256, math.floor(n / 256) % 256, n % 256 }
+			for j = 1, count - 1 do
+				out[#out + 1] = string.char(bytes[j])
+			end
+		end
+		return table.concat(out)
+	end
+	Stats.b64encode, Stats.b64decode = b64encode, b64decode
+	-- Bitmaps (hex strings) of hashed user ids.
+	local Hex = "0123456789abcdef"
+	local function blank(bits)
+		return string.rep("0", bits // 4)
+	end
+	local function bitmapSet(map, bits, key)
+		map = if type(map) == "string" and #map == bits // 4 then map else blank(bits)
+		local index = (tonumber(key, 16) or 0) % bits
+		local pos = index // 4 + 1
+		local nibble = tonumber(string.sub(map, pos, pos), 16) or 0
+		local bit = 2 ^ (index % 4)
+		if math.floor(nibble / bit) % 2 == 0 then
+			nibble += bit
+		end
+		return string.sub(map, 1, pos - 1) .. string.sub(Hex, nibble + 1, nibble + 1) .. string.sub(map, pos + 1)
+	end
+	local function bitmapHas(map, bits, key)
+		if type(map) ~= "string" or #map ~= bits // 4 then
+			return false
+		end
+		local index = (tonumber(key, 16) or 0) % bits
+		local pos = index // 4 + 1
+		local nibble = tonumber(string.sub(map, pos, pos), 16) or 0
+		return math.floor(nibble / 2 ^ (index % 4)) % 2 == 1
+	end
+	-- Linear counting: estimated number of different ids in the bitmap.
+	local function bitmapCount(map, bits)
+		if type(map) ~= "string" then
+			return 0
+		end
+		local set = 0
+		for i = 1, #map do
+			local n = tonumber(string.sub(map, i, i), 16) or 0
+			while n > 0 do
+				set += n % 2
+				n = n // 2
+			end
+		end
+		local zeros = bits - set
+		if zeros <= 0 then
+			return bits * math.log(bits)
+		end
+		return -bits * math.log(zeros / bits)
+	end
+	Stats.bitmapSet, Stats.bitmapHas, Stats.bitmapCount = bitmapSet, bitmapHas, bitmapCount
+	function Stats.enabled()
+		return StatsWebhook ~= "" and StatsMessage ~= "" and StatsData ~= "" and not string.find(StatsData, "__")
+	end
+	local function fresh()
+		return { v = 3, g = {}, p = {}, ex = {}, h = {}, wk = {} }
+	end
+	local function readMessage(id)
+		local response = httpRequest({ Url = StatsWebhook .. "/messages/" .. id, Method = "GET" })
+		if not response or response.StatusCode ~= 200 then
+			return nil
+		end
+		return decode(response.Body)
+	end
+	-- The state is split into chunks "?c=<index>&d=<base64>" inside the embeds' title and author links.
+	function Stats.parse(message)
+		local chunks = {}
+		for _, embed in ipairs(type(message) == "table" and type(message.embeds) == "table" and message.embeds or {}) do
+			for _, link in ipairs({ embed.url, type(embed.author) == "table" and embed.author.url or nil }) do
+				local index, part = string.match(tostring(link or ""), "[?&]c=(%d+)&d=([%w%-_]+)")
+				if index and tonumber(index) > 0 then
+					chunks[tonumber(index)] = part
+				end
+			end
+		end
+		local joined, i = {}, 1
+		while chunks[i] do
+			joined[#joined + 1] = chunks[i]
+			i += 1
+		end
+		local data = #joined > 0 and decode(b64decode(table.concat(joined))) or nil
+		if data and (data.v == 2 or data.v == 3) then
+			data.v = 3
+			data.g, data.p, data.ex, data.h, data.wk = data.g or {}, data.p or {}, data.ex or {}, data.h or {}, data.wk or {}
+			return data
+		end
+		return nil
+	end
+	function Stats.read()
+		local data = Stats.parse(readMessage(StatsData))
+		if data then
+			return data
+		end
+		-- First run of this version: carry over what the older single-message dashboard stored.
+		return Stats.parse(readMessage(StatsMessage)) or fresh()
+	end
+	local function short(n)
+		n = tonumber(n) or 0
+		if n >= 1e6 then
+			return string.format("%.1fM", n / 1e6)
+		elseif n >= 1e4 then
+			return string.format("%.1fK", n / 1e3)
+		end
+		return tostring(math.floor(n + 0.5))
+	end
+	function Stats.onlineCount(data, now)
+		local o = type(data.ow) == "table" and data.ow or {}
+		local wid = now // Window
+		-- Sum of the sample weights of the different players seen in the window (every write stands for k players).
+		-- A heartbeat comes every 5-6 minutes, so a full window holds everyone once: take the bigger of the
+		-- running window and the previous full one.
+		local current = if o.id == wid then o.n or 0 else 0
+		local previous = if o.id == wid then o.pn or 0 elseif o.id == wid - 1 then o.n or 0 else 0
+		local fromBitmaps = math.max(current, previous)
+		local listed = 0
+		for _, p in pairs(data.p) do
+			if now - (p.l or 0) <= Online then
+				listed += p.w or 1
+			end
+		end
+		return math.floor(math.max(fromBitmaps, listed) + 0.5)
+	end
+	-- Top message: one short summary line (no embeds, no images).
+	function Stats.line(data)
+		local now = os.time()
+		local isToday = data.day == os.date("!%Y-%m-%d", now)
+		local playersToday = if isToday then math.floor(bitmapCount(data.tu, TodayBits) + 0.5) else 0
+		return string.format(
+			"🦅 **Corvus**  ·  🟢 **%s** online  ·  👥 **%s** players today  ·  ▶ **%s** runs today  ·  🏆 record **%s**",
+			short(Stats.onlineCount(data, now)),
+			short(playersToday),
+			short(if isToday then data.r or 0 else 0),
+			short(data.rec or 0)
+		)
+	end
+	-- Bottom message: 4 plain embeds whose hidden links carry the state (see Stats.pack). Nothing else is shown.
+	function Stats.view()
+		local embeds = {}
+		for i = 1, 4 do
+			table.insert(embeds, {
+				author = { name = if i == 1 then "CORVUS DATA" else "·" },
+				title = if i == 1 then "Hidden state of the desktop dashboard, please do not delete" else "·",
+				color = 2829617,
+			})
+		end
+		return embeds
+	end
+	-- Packs the state into the hidden links of the bottom message (8 links x 1900 characters).
+	function Stats.pack(data, embeds)
+		local encoded = b64encode(HttpService:JSONEncode(data))
+		local size = 1900
+		local slots = {}
+		for _, embed in ipairs(embeds) do
+			table.insert(slots, function(link)
+				embed.url = link
+			end)
+			table.insert(slots, function(link)
+				embed.author.url = link
+			end)
+		end
+		if math.ceil(#encoded / size) > #slots then
+			return false
+		end
+		for i = 1, #slots do
+			local part = string.sub(encoded, (i - 1) * size + 1, i * size)
+			-- Every link must differ: Discord merges embeds that share the same link.
+			slots[i](if part ~= "" then Invite .. "?c=" .. i .. "&d=" .. part else Invite .. "?s=" .. i)
+		end
+		return true
+	end
+	local function patch(id, embeds, content)
+		local response = httpRequest({
+			Url = StatsWebhook .. "/messages/" .. id,
+			Method = "PATCH",
+			Headers = { ["Content-Type"] = "application/json" },
+			Body = HttpService:JSONEncode({ content = content or "", embeds = embeds or {}, attachments = {} }),
+		})
+		return response ~= nil and response.StatusCode == 200
+	end
+	function Stats.render(data)
+		local embeds = Stats.view()
+		while not Stats.pack(data, embeds) do
+			-- Too much data: drop the oldest start error, then the oldest listed player, until it fits.
+			if type(data.er) == "table" and #data.er > 0 then
+				table.remove(data.er, 1)
+			else
+				local oldestKey, oldest
+				for key, p in pairs(data.p) do
+					if not oldest or (p.l or 0) < oldest then
+						oldestKey, oldest = key, p.l or 0
+					end
+				end
+				if not oldestKey then
+					return nil
+				end
+				data.p[oldestKey] = nil
+			end
+		end
+		return embeds
+	end
+	function Stats.write(data)
+		-- The top line is edited at most once a minute when its numbers changed (or every 10 minutes), the data message on every beat.
+		local now = os.time()
+		local line = Stats.line(data)
+		local sinceTop = now - (data.tt or 0)
+		local sendTop = (data.tl ~= line and sinceTop >= 60) or sinceTop >= 600
+		if sendTop then
+			data.tl, data.tt = line, now
+		end
+		local embeds = Stats.render(data)
+		if not embeds then
+			return false
+		end
+		-- Data first, so a failed top edit never loses state.
+		if patch(StatsData, embeds) then
+			if sendTop then
+				patch(StatsMessage, nil, line .. "  ·  <t:" .. now .. ":R>")
+			end
+			return true
+		end
+		return false
+	end
+	local function me()
+		local player = Players.LocalPlayer
+		local live = Env.CorvusLive
+		local anonymous, info = false, nil
+		if type(live) == "table" then
+			local ok, value = pcall(live.anonymous)
+			anonymous = ok and value == true
+			local okInfo, text = pcall(live.info)
+			if okInfo and type(text) == "string" then
+				info = string.sub((string.gsub(text, "[\r\n]", " ")), 1, 70)
+			end
+		end
+		local executor = "Unknown"
+		pcall(function()
+			executor = string.sub(tostring((identifyexecutor())), 1, 20)
+		end)
+		local key = string.format("%08x", (player.UserId * 2654435761) % 4294967296)
+		local name = "Anonymous"
+		if not anonymous then
+			name = if player.DisplayName ~= player.Name then player.DisplayName .. " (@" .. player.Name .. ")" else "@" .. player.Name
+		end
+		return key, name, executor, info
+	end
+	-- With many players not everyone writes: each writes with chance 1/k and counts as k, which keeps the messages
+	-- under Discord's limit of about 5 edits per 2 seconds per webhook.
+	function Stats.update(data, gameName, isRun, key, name, executor, info, now)
+		for k, p in pairs(data.p) do
+			if now - (p.l or 0) > Online then
+				data.p[k] = nil
+			end
+		end
+		local onlineNow = Stats.onlineCount(data, now)
+		local k = math.max(1, math.floor(onlineNow / 25))
+		if math.random() > 1 / k then
+			return false
+		end
+		data.since = data.since or now
+		local day = os.date("!%Y-%m-%d", now)
+		if data.day ~= day then
+			if data.day then
+				local finished = { day = data.day, r = data.r or 0, u = math.floor(bitmapCount(data.tu, TodayBits) + 0.5) }
+				data.y = { r = finished.r, u = finished.u }
+				table.insert(data.wk, finished)
+				-- 30 days are kept (the desktop dashboard shows them all, Discord the last 7)
+				while #data.wk > 29 do
+					table.remove(data.wk, 1)
+				end
+				if not data.bd or finished.r > (data.bd.r or 0) then
+					data.bd = finished
+				end
+			end
+			data.day, data.r, data.tu, data.ex, data.pk, data.nw = day, 0, nil, {}, 0, 0
+		end
+		local g = data.g[gameName] or { t = 0, d = 0, day = day }
+		if g.day ~= day then
+			g.day, g.d = day, 0
+		end
+		if isRun then
+			g.t = (g.t or 0) + k
+			g.d = (g.d or 0) + k
+			data.r = (data.r or 0) + k
+			data.ex[executor] = (data.ex[executor] or 0) + k
+			data.et = type(data.et) == "table" and data.et or {}
+			data.et[executor] = (data.et[executor] or 0) + k
+		end
+		data.g[gameName] = g
+		-- start errors (executor + game + first line of the error, never the player): shows why a hub fails on an executor
+		local lastError = Env.CorvusLastError
+		if type(lastError) == "string" and lastError ~= "" then
+			Env.CorvusLastError = nil
+			local line = string.match(lastError, ":\n([^\n]+)") or lastError
+			line = string.sub(line, 1, 90)
+			data.er = type(data.er) == "table" and data.er or {}
+			local merged = false
+			for _, item in ipairs(data.er) do
+				if item.x == executor and item.g == gameName and item.e == line then
+					item.t, item.c, merged = now, (item.c or 1) + k, true
+				end
+			end
+			if not merged then
+				table.insert(data.er, { t = now, x = executor, g = gameName, e = line, c = k })
+			end
+			table.sort(data.er, function(a, b)
+				return a.t < b.t
+			end)
+			while #data.er > 12 do
+				table.remove(data.er, 1)
+			end
+		end
+		local isNew = not bitmapHas(data.ev, EverBits, key)
+		if isNew then
+			data.nw = (data.nw or 0) + k
+		end
+		data.tu = bitmapSet(data.tu, TodayBits, key)
+		data.ev = bitmapSet(data.ev, EverBits, key)
+		-- online window bitmaps
+		local wid = now // Window
+		local o = type(data.ow) == "table" and data.ow or {}
+		if o.id ~= wid then
+			o = { id = wid, pn = if o.id == wid - 1 then o.n or 0 else 0, n = 0 }
+		end
+		if not bitmapHas(o.a, OnlineBits, key) then
+			o.n = (o.n or 0) + k
+		end
+		o.a = bitmapSet(o.a, OnlineBits, key)
+		data.ow = o
+		local p = data.p[key] or { s = now, nw = if isNew then true else nil }
+		p.n, p.g, p.e, p.i, p.l, p.w = name, gameName, executor, info, now, k
+		p.s = Stats.started or p.s
+		data.p[key] = p
+		-- keep only the most recent players in the list
+		local listed = {}
+		for id, q in pairs(data.p) do
+			table.insert(listed, { id = id, l = q.l or 0 })
+		end
+		table.sort(listed, function(a, b)
+			return a.l > b.l
+		end)
+		for i = KeepPlayers + 1, #listed do
+			data.p[listed[i].id] = nil
+		end
+		local total = Stats.onlineCount(data, now)
+		data.pk = math.max(data.pk or 0, total)
+		if total > (data.rec or 0) then
+			data.rec, data.recAt = total, now
+		end
+		local hour = now // 3600
+		local slot = data.h[tostring(hour % 24)]
+		if type(slot) ~= "table" or slot.id ~= hour then
+			slot = { id = hour, v = 0 }
+		end
+		slot.v = math.max(slot.v or 0, total)
+		data.h[tostring(hour % 24)] = slot
+		return true
+	end
+	-- Heartbeat to the stats worker (tools/dashboard/worker). Write-only: it answers "ok" and nothing can be read back.
+	local function beatWorker(gameName, isRun)
+		local key, name, executor, info = me()
+		local lastError = Env.CorvusLastError
+		local line
+		if type(lastError) == "string" and lastError ~= "" then
+			Env.CorvusLastError = nil
+			line = string.sub(string.match(lastError, ":\n([^\n]+)") or lastError, 1, 90)
+		end
+		local response = httpRequest({
+			Url = StatsUrl .. "/beat",
+			Method = "POST",
+			Headers = { ["Content-Type"] = "application/json" },
+			Body = HttpService:JSONEncode({ k = key, n = name, e = executor, g = gameName, i = info, r = isRun, s = Stats.started, x = line, pv = game.PlaceVersion }),
+		})
+		local done = response ~= nil and (response.StatusCode == 200 or response.StatusCode == 429)
+		if not done then
+			Env.CorvusLastError = Env.CorvusLastError or lastError
+		end
+		return done
+	end
+	function Stats.beat(gameName, isRun)
+		if StatsUrl ~= "" and beatWorker(gameName, isRun) then
+			return
+		end
+		local data = Stats.read()
+		if not data then
+			return
+		end
+		local key, name, executor, info = me()
+		if Stats.update(data, gameName, isRun, key, name, executor, info, os.time()) then
+			Stats.write(data)
+		end
+	end
+	function Stats.start(gameName)
+		if not Stats.enabled() or Env.CorvusStatsRunning then
+			return
+		end
+		Env.CorvusStatsRunning = true
+		Stats.started = os.time()
+		-- read by the hub's log telemetry (same player key hash as the heartbeat, never the nickname)
+		Stats.game, Stats.url = gameName, StatsUrl
+		Stats.playerKey = function()
+			return (me())
+		end
+		task.spawn(function()
+			-- The first beat waits a bit so the hub can register its status line.
+			task.wait(math.random(15, 40))
+			pcall(Stats.beat, gameName, true)
+			while true do
+				task.wait(Beat + math.random() * 60)
+				pcall(Stats.beat, gameName, false)
+			end
+		end)
+	end
+end
+Env.CorvusStats = Stats
+
+-- Xeno/Solara time out or return empty bodies on the big hub files: fetch with retries and check the size
+local function fetchHub(url)
+	local lastErr = "empty response"
+	for attempt = 1, 4 do
+		local ok, src = pcall(game.HttpGet, game, url)
+		if ok and type(src) == "string" and #src > 10000 then
+			return src
+		end
+		lastErr = ok and ("short response " .. tostring(type(src) == "string" and #src or src)) or tostring(src)
+		task.wait(attempt)
+	end
+	return nil, lastErr
+end
+
+if entry then
+	Stats.start(entry.name)
+	local ok, result = pcall(function()
+		local src, err = fetchHub(Repo .. entry.file)
+		if not src then
+			error("download failed: " .. tostring(err))
+		end
+		local fn, compileErr = loadstring(src)
+		if not fn then
+			error("compile failed: " .. tostring(compileErr))
+		end
+		return fn()
+	end)
+	if not ok then
+		warn("[Corvus] Failed to load " .. entry.name .. ": " .. tostring(result))
+		Env.CorvusLastError = "[Corvus] " .. entry.name .. " failed to load:\n" .. tostring(result)
+	end
+	if Env.CorvusLastError then
+		-- report the start error right away instead of waiting for the next heartbeat
+		task.spawn(pcall, Stats.beat, entry.name, false)
+	end
+	-- Auto update: tools/github_upload.py keeps "Versions" ({hub name: hash}) next to the hubs. Every 3-4 minutes the
+	-- loader compares it and, when this game's hub changed, loads the new one (the library closes the old window and
+	-- the old instance stops itself). getgenv().CorvusAutoUpdate = false turns it off.
+	if not Env.CorvusUpdateWatcher then
+		Env.CorvusUpdateWatcher = true
+		task.spawn(function()
+			local jsonService = game:GetService("HttpService")
+			local function version()
+				local ok, text = pcall(function()
+					return game:HttpGet(Repo .. "Versions?t=" .. tostring(os.time()))
+				end)
+				if not ok or type(text) ~= "string" then
+					return nil
+				end
+				local okJson, data = pcall(jsonService.JSONDecode, jsonService, text)
+				return okJson and type(data) == "table" and data[entry.name] or nil
+			end
+			local current = version()
+			-- players complained about reloads every 30 min on busy days: check every 15 min, reload at most once per 2 h
+			local lastReload = 0
+			while true do
+				task.wait(900 + math.random() * 120)
+				local latest = version()
+				if latest and current == nil then
+					current = latest
+				elseif latest and latest ~= current and Env.CorvusAutoUpdate ~= false and os.clock() - lastReload >= 7200 then
+					current = latest
+					lastReload = os.clock()
+					pcall(function()
+						game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Corvus", Text = "New version found, updating the hub...", Duration = 6 })
+					end)
+					local okLoad, err = pcall(function()
+						local src, fetchErr = fetchHub(Repo .. entry.file .. "?v=" .. latest)
+						if not src then
+							error(fetchErr)
+						end
+						return loadstring(src)()
+					end)
+					if not okLoad then
+						warn("[Corvus] Update failed: " .. tostring(err))
+					end
+				end
+			end
+		end)
+	end
+else
+	warn("[Corvus] This game is not supported yet: " .. tostring(game.PlaceId))
+end
