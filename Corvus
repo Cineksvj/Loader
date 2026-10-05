@@ -30,7 +30,7 @@ local StatsMessage = "1556430209979523195"
 local StatsData = "1556430211346599952"
 -- Stats worker (Cloudflare, see tools/dashboard/notes.md). Empty = Discord carrier only. With a URL the heartbeats go
 -- there and Discord is used only when the worker does not answer.
-local StatsUrl = ""
+local StatsUrl = "https://corvus-stats.corvushub.workers.dev"
 local Invite ="https://discord.gg/PdQvN2bDCu"
 
 local HttpService = game:GetService("HttpService")
