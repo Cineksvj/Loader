@@ -16,10 +16,8 @@ local Games = {
 	[124216119978534] = { name = "Ride A Pet", file = "Ride%20A%20Pet" },
 	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
 	[185655149] = { name = "Welcome to Bloxburg", file = "Welcome%20to%20Bloxburg" },
-	[135621866300031] = { name = "Bizarre", file = "Bizarre" },
 	[118315378611589] = { name = "Voltline Electric Scooters", file = "Voltline%20Electric%20Scooters" },
 	[111543903102439] = { name = "+1 Stone Skipping", file = "%2B1%20Stone%20Skipping" },
-	[107778070777162] = { name = "Steal An Egg", file = "Steal%20An%20Egg" },
 }
 local StatsWebhook = (function(hex)
 	local key = "corvus"
