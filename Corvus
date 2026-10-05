@@ -1,11 +1,10 @@
 -- Corvus universal loader: picks the hub for the current game and keeps a live dashboard in Discord.
--- The dashboard is two webhook messages that are edited, never re-posted:
---   StatsMessage (top): overview with trends and a 24 hour chart, every game with a share chart.
---   StatsData (below): players online, executors, the last 7 days and records. Its embeds also carry the whole
---   dashboard state as base64 in their hidden title/author links, so nothing technical is ever visible.
--- Charts are images from QuickChart (only totals are sent). Players with Anonymous Mode on (Info tab) show as
--- "Anonymous". Unique and online players are counted with bitmaps of hashed user ids, so the stored state stays
--- small no matter how many people play.
+-- The stats are two webhook messages that are edited, never re-posted:
+--   StatsMessage (top): one short summary line (online, players today, runs today, record).
+--   StatsData (below): plain embeds whose hidden title/author links carry the whole state as base64.
+-- The real dashboard is the desktop app (tools/dashboard) that reads StatsData. Players with Anonymous Mode on
+-- (Info tab) show as "Anonymous". Unique and online players are counted with bitmaps of hashed user ids, so the
+-- stored state stays small no matter how many people play.
 -- Filled in by tools/github_upload.py when the loader is uploaded (raw URL of the repo that holds the hubs).
 local Repo = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/"
 local Games = {
@@ -43,7 +42,6 @@ do
 	local Window = 6 * 60 -- online counting window (bitmaps of the current and the previous window)
 	local KeepPlayers = 25 -- players kept in the online list
 	local TodayBits, EverBits, OnlineBits = 2048, 4096, 1024
-	local ESC = string.char(27)
 	local function httpRequest(options)
 		local fn = (typeof(syn) == "table" and syn.request) or (typeof(http) == "table" and http.request) or http_request or request
 		if type(fn) ~= "function" then
@@ -193,54 +191,6 @@ do
 		end
 		return tostring(math.floor(n + 0.5))
 	end
-	local function duration(seconds)
-		seconds = math.max(0, math.floor(seconds))
-		if seconds >= 3600 then
-			return string.format("%dh %02dm", seconds // 3600, (seconds % 3600) // 60)
-		end
-		return string.format("%dm", math.max(1, seconds // 60))
-	end
-	-- Width in characters, not bytes (the symbols are multibyte UTF-8).
-	local function pad(text, width)
-		text = tostring(text)
-		local length = utf8.len(text) or #text
-		if length > width then
-			local cut = utf8.offset(text, width) or width
-			return string.sub(text, 1, cut - 1) .. "…"
-		end
-		return text .. string.rep(" ", width - length)
-	end
-	local function color(code, text)
-		return ESC .. "[" .. code .. "m" .. text .. ESC .. "[0m"
-	end
-	local function bar(value, max, width)
-		local filled = if max > 0 then math.floor(value / max * width + 0.5) else 0
-		return string.rep("█", filled) .. string.rep("░", width - filled)
-	end
-	local Palette = { "#5865F2", "#57F287", "#FEE75C", "#EB459E", "#ED4245", "#3BA55D", "#FAA61A", "#9B59B6", "#1ABC9C", "#E67E22" }
-	local function urlEncode(text)
-		local ok, value = pcall(HttpService.UrlEncode, HttpService, text)
-		if ok and type(value) == "string" then
-			return value
-		end
-		return (string.gsub(text, "[^%w%-_%.~]", function(c)
-			return string.format("%%%02X", string.byte(c))
-		end))
-	end
-	local function chart(config, width, height)
-		return "https://quickchart.io/chart?bkg=transparent&devicePixelRatio=2&w=" .. width .. "&h=" .. height .. "&c=" .. urlEncode(HttpService:JSONEncode(config))
-	end
-	local Grid = { color = "rgba(255,255,255,0.06)" }
-	local function trend(today, yesterday)
-		if not yesterday or yesterday <= 0 then
-			return ""
-		end
-		local change = (today - yesterday) / yesterday * 100
-		if math.abs(change) < 0.5 then
-			return " `± 0%`"
-		end
-		return string.format(" `%s %d%%`", if change > 0 then "▲" else "▼", math.floor(math.abs(change) + 0.5))
-	end
 	function Stats.onlineCount(data, now)
 		local o = type(data.ow) == "table" and data.ow or {}
 		local wid = now // Window
@@ -258,215 +208,30 @@ do
 		end
 		return math.floor(math.max(fromBitmaps, listed) + 0.5)
 	end
-	-- Builds both messages: { top embeds }, { bottom embeds }.
-	function Stats.view(data)
+	-- Top message: one short summary line (no embeds, no images).
+	function Stats.line(data)
 		local now = os.time()
-		local day = os.date("!%Y-%m-%d", now)
-		local online, perGame = {}, {}
-		local sessionSum, sessionN = 0, 0
-		for _, p in pairs(data.p) do
-			if now - (p.l or 0) <= Online then
-				table.insert(online, p)
-				perGame[p.g] = (perGame[p.g] or 0) + (p.w or 1)
-				sessionSum += now - (p.s or now)
-				sessionN += 1
-			end
-		end
-		table.sort(online, function(a, b)
-			return (a.s or 0) < (b.s or 0)
-		end)
-		local onlineCount = Stats.onlineCount(data, now)
-		local isToday = data.day == day
-		local runsToday = if isToday then data.r or 0 else 0
+		local isToday = data.day == os.date("!%Y-%m-%d", now)
 		local playersToday = if isToday then math.floor(bitmapCount(data.tu, TodayBits) + 0.5) else 0
-		local peakToday = if isToday then data.pk or 0 else 0
-		local newToday = if isToday then data.nw or 0 else 0
-		local y = type(data.y) == "table" and data.y or {}
-		local runsTotal = 0
-		for _, g in pairs(data.g) do
-			runsTotal += g.t or 0
+		return string.format(
+			"🦅 **Corvus**  ·  🟢 **%s** online  ·  👥 **%s** players today  ·  ▶ **%s** runs today  ·  🏆 record **%s**",
+			short(Stats.onlineCount(data, now)),
+			short(playersToday),
+			short(if isToday then data.r or 0 else 0),
+			short(data.rec or 0)
+		)
+	end
+	-- Bottom message: 4 plain embeds whose hidden links carry the state (see Stats.pack). Nothing else is shown.
+	function Stats.view()
+		local embeds = {}
+		for i = 1, 4 do
+			table.insert(embeds, {
+				author = { name = if i == 1 then "CORVUS DATA" else "·" },
+				title = if i == 1 then "Hidden state of the desktop dashboard, please do not delete" else "·",
+				color = 2829617,
+			})
 		end
-		local avgSession = if sessionN > 0 then sessionSum / sessionN else 0
-		-- Overview
-		local function cell(label, code, value)
-			return color(code, pad(label, 16)) .. color("1;37", pad(short(value), 8))
-		end
-		local overview = table.concat({
-			"```ansi",
-			cell("● ONLINE NOW", "1;32", onlineCount) .. cell("▲ PEAK TODAY", "1;33", peakToday),
-			cell("◆ PLAYERS TODAY", "1;36", playersToday) .. cell("★ RECORD", "1;35", data.rec or 0),
-			cell("▶ RUNS TODAY", "1;34", runsToday) .. cell("∑ ALL RUNS", "1;31", runsTotal),
-			cell("✚ NEW TODAY", "1;32", newToday) .. cell("◎ PLAYERS EVER", "1;37", math.floor(bitmapCount(data.ev, EverBits) + 0.5)),
-			"```",
-			string.format(
-				"📈 Runs **%s**%s  ·  👥 Players **%s**%s  ·  ⏱ Avg session **%s**",
-				short(runsToday),
-				trend(runsToday, y.r),
-				short(playersToday),
-				trend(playersToday, y.u),
-				if avgSession > 0 then duration(avgSession) else "-"
-			),
-			"-# Live since <t:" .. tostring(data.since or now) .. ":D>  ·  updated <t:" .. now .. ":R>  ·  trends vs yesterday (UTC)",
-		}, "\n")
-		-- 24 hour line chart
-		local hour = now // 3600
-		local labels, values, any = {}, {}, false
-		for i = 23, 0, -1 do
-			local id = hour - i
-			local slot = data.h[tostring(id % 24)]
-			local v = if type(slot) == "table" and slot.id == id then slot.v or 0 else 0
-			any = any or v > 0
-			table.insert(labels, os.date("!%H:00", id * 3600))
-			table.insert(values, v)
-		end
-		local lineChart = chart({
-			type = "line",
-			data = { labels = labels, datasets = { { data = values, fill = true, borderColor = "#57F287", backgroundColor = "rgba(87,242,135,0.18)", pointRadius = 0, lineTension = 0.4, borderWidth = 3 } } },
-			options = {
-				legend = { display = false },
-				title = { display = true, text = "Players online · last 24 hours (UTC)", fontColor = "#f2f3f5", fontSize = 15 },
-				scales = { xAxes = { { gridLines = Grid, ticks = { fontColor = "#b5bac1", maxTicksLimit = 8 } } }, yAxes = { { gridLines = Grid, ticks = { fontColor = "#b5bac1", beginAtZero = true, precision = 0, suggestedMax = 4 } } } },
-			},
-		}, 640, 220)
-		-- Games
-		local names = {}
-		for name in pairs(data.g) do
-			table.insert(names, name)
-		end
-		local function today(g)
-			return if g.day == day then g.d or 0 else 0
-		end
-		table.sort(names, function(a, b)
-			local x, z = perGame[a] or 0, perGame[b] or 0
-			if x ~= z then
-				return x > z
-			end
-			if today(data.g[a]) ~= today(data.g[b]) then
-				return today(data.g[a]) > today(data.g[b])
-			end
-			return (data.g[a].t or 0) > (data.g[b].t or 0)
-		end)
-		local useOnline = next(perGame) ~= nil
-		local shareBase = 0
-		for _, name in ipairs(names) do
-			shareBase += if useOnline then perGame[name] or 0 else today(data.g[name])
-		end
-		local gameRows = { "```ansi", color("1;30", pad("GAME", 20) .. pad("ONLINE", 8) .. pad("TODAY", 8) .. pad("TOTAL", 8) .. "SHARE") }
-		local chartLabels, chartValues, chartColors = {}, {}, {}
-		for i, name in ipairs(names) do
-			local g = data.g[name]
-			local n = perGame[name] or 0
-			local part = if useOnline then n else today(g)
-			local share = if shareBase > 0 then part / shareBase * 100 else 0
-			table.insert(gameRows, color("1;37", pad(name, 20)) .. color(if n > 0 then "1;32" else "1;30", pad(short(n), 8)) .. color("1;34", pad(short(today(g)), 8)) .. color("1;36", pad(short(g.t or 0), 8)) .. color("1;33", string.format("%d%%", math.floor(share + 0.5))))
-			if part > 0 and #chartLabels < 10 then
-				table.insert(chartLabels, name)
-				table.insert(chartValues, part)
-				table.insert(chartColors, Palette[(i - 1) % #Palette + 1])
-			end
-		end
-		table.insert(gameRows, "```")
-		local doughnut = if #chartValues > 0
-			then chart({
-				type = "doughnut",
-				data = { labels = chartLabels, datasets = { { data = chartValues, backgroundColor = chartColors, borderColor = "#2b2d31", borderWidth = 3 } } },
-				options = {
-					cutoutPercentage = 64,
-					legend = { position = "right", labels = { fontColor = "#f2f3f5", fontSize = 14, boxWidth = 14 } },
-					title = { display = true, text = if useOnline then "Players online by game" else "Runs today by game", fontColor = "#f2f3f5", fontSize = 15 },
-					plugins = { datalabels = { display = false }, doughnutlabel = { labels = { { text = short(if useOnline then onlineCount else runsToday), font = { size = 34 }, color = "#ffffff" }, { text = if useOnline then "online" else "runs today", color = "#b5bac1" } } } },
-				},
-			}, 640, 260)
-			else nil
-		local top = {
-			{ author = { name = "CORVUS  ·  LIVE DASHBOARD", url = Invite }, title = "🦅  Corvus Hub  ·  Live Statistics", url = Invite, color = 9055202, description = overview },
-			{ author = { name = "GAMES" }, title = "🎮  Who plays what", color = 5793266, description = if #names > 0 then table.concat(gameRows, "\n") else "*No games yet, they show up with the first players*" },
-		}
-		-- Discord takes image links up to about 2000 characters.
-		if any and #lineChart <= 2000 then
-			top[1].image = { url = lineChart }
-		end
-		if doughnut and #doughnut <= 2000 then
-			top[2].image = { url = doughnut }
-		end
-		-- Players online
-		local rows = {}
-		for i, p in ipairs(online) do
-			if i > 12 then
-				break
-			end
-			table.insert(rows, string.format(
-				"%s **%s**%s\n-# 🎮 %s  ·  ⚙️ %s  ·  ⏱ %s%s",
-				if i == 1 then "🥇" elseif i == 2 then "🥈" elseif i == 3 then "🥉" else "🟢",
-				p.n or "Anonymous",
-				if p.nw then "  `NEW`" else "",
-				p.g or "?",
-				p.e or "?",
-				duration(now - (p.s or now)),
-				if p.i and p.i ~= "" then "  ·  " .. p.i else ""
-			))
-		end
-		if onlineCount > #rows and #rows > 0 then
-			table.insert(rows, string.format("-# …and about %s more online", short(onlineCount - #rows)))
-		end
-		-- Executors today
-		local execNames, maxExec, execTotal = {}, 1, 0
-		for name, n in pairs(if isToday then data.ex else {}) do
-			table.insert(execNames, name)
-			maxExec = math.max(maxExec, n)
-			execTotal += n
-		end
-		table.sort(execNames, function(a, b)
-			return data.ex[a] > data.ex[b]
-		end)
-		local execRows = { "```ansi" }
-		for i, name in ipairs(execNames) do
-			if i > 8 then
-				break
-			end
-			table.insert(execRows, color("1;37", pad(name, 16)) .. color("1;33", bar(data.ex[name], maxExec, 14)) .. " " .. color("1;37", pad(short(data.ex[name]), 6)) .. color("1;30", string.format("%d%%", math.floor(data.ex[name] / math.max(execTotal, 1) * 100 + 0.5))))
-		end
-		table.insert(execRows, "```")
-		-- Last 7 days (finished days plus today)
-		local week = {}
-		for i = math.max(1, #data.wk - 5), #data.wk do
-			table.insert(week, data.wk[i])
-		end
-		table.insert(week, { day = day, r = runsToday, u = playersToday })
-		while #week > 7 do
-			table.remove(week, 1)
-		end
-		local maxDay = 1
-		for _, d in ipairs(week) do
-			maxDay = math.max(maxDay, d.r or 0)
-		end
-		local weekRows = { "```ansi", color("1;30", pad("DAY", 8) .. pad("RUNS", 22) .. "PLAYERS") }
-		for _, d in ipairs(week) do
-			local label = if d.day == day then "Today" else string.sub(tostring(d.day), 6)
-			table.insert(weekRows, color(if d.day == day then "1;32" else "1;37", pad(label, 8)) .. color("1;34", bar(d.r or 0, maxDay, 12)) .. " " .. color("1;37", pad(short(d.r or 0), 9)) .. color("1;36", short(d.u or 0)))
-		end
-		table.insert(weekRows, "```")
-		-- Records
-		local best = type(data.bd) == "table" and data.bd or {}
-		local records = table.concat({
-			string.format("🏆 Most online at once **%s**%s", short(data.rec or 0), if data.recAt then "  ·  <t:" .. data.recAt .. ":R>" else ""),
-			string.format("📅 Best day **%s** runs%s", short(best.r or 0), if best.day then "  ·  " .. best.day else ""),
-			string.format("🌍 Players ever **%s**  ·  ∑ runs **%s**", short(math.floor(bitmapCount(data.ev, EverBits) + 0.5)), short(runsTotal)),
-		}, "\n")
-		local bottom = {
-			{ author = { name = "PLAYERS ONLINE" }, title = string.format("👤  %s online right now", short(onlineCount)), color = 5763719, description = if #rows > 0 then table.concat(rows, "\n") else "*Nobody online right now*" },
-			{ author = { name = "EXECUTORS" }, title = "⚙️  Executors today", color = 16426522, description = if #execNames > 0 then table.concat(execRows, "\n") else "*No runs today yet*" },
-			{ author = { name = "HISTORY" }, title = "📅  Last 7 days", color = 3447003, description = table.concat(weekRows, "\n") },
-			{
-				author = { name = "RECORDS" },
-				title = "🏆  Records",
-				color = 15844367,
-				description = records,
-				footer = { text = "Corvus  ·  keyless scripts  ·  discord.gg/PdQvN2bDCu" },
-				timestamp = DateTime.now():ToIsoDate(),
-			},
-		}
-		return top, bottom
+		return embeds
 	end
 	-- Packs the state into the hidden links of the bottom message (8 links x 1900 characters).
 	function Stats.pack(data, embeds)
@@ -491,41 +256,54 @@ do
 		end
 		return true
 	end
-	local function patch(id, embeds)
+	local function patch(id, embeds, content)
 		local response = httpRequest({
 			Url = StatsWebhook .. "/messages/" .. id,
 			Method = "PATCH",
 			Headers = { ["Content-Type"] = "application/json" },
-			Body = HttpService:JSONEncode({ content = "", embeds = embeds, attachments = {} }),
+			Body = HttpService:JSONEncode({ content = content or "", embeds = embeds or {}, attachments = {} }),
 		})
 		return response ~= nil and response.StatusCode == 200
 	end
 	function Stats.render(data)
-		local top, bottom = Stats.view(data)
-		while not Stats.pack(data, bottom) do
-			-- Too much data: drop the oldest listed player until it fits.
-			local oldestKey, oldest
-			for key, p in pairs(data.p) do
-				if not oldest or (p.l or 0) < oldest then
-					oldestKey, oldest = key, p.l or 0
+		local embeds = Stats.view()
+		while not Stats.pack(data, embeds) do
+			-- Too much data: drop the oldest start error, then the oldest listed player, until it fits.
+			if type(data.er) == "table" and #data.er > 0 then
+				table.remove(data.er, 1)
+			else
+				local oldestKey, oldest
+				for key, p in pairs(data.p) do
+					if not oldest or (p.l or 0) < oldest then
+						oldestKey, oldest = key, p.l or 0
+					end
 				end
+				if not oldestKey then
+					return nil
+				end
+				data.p[oldestKey] = nil
 			end
-			if not oldestKey then
-				return nil
-			end
-			data.p[oldestKey] = nil
-			top, bottom = Stats.view(data)
 		end
-		return top, bottom
+		return embeds
 	end
 	function Stats.write(data)
-		local top, bottom = Stats.render(data)
-		if not top then
+		-- The top line is edited at most once a minute when its numbers changed (or every 10 minutes), the data message on every beat.
+		local now = os.time()
+		local line = Stats.line(data)
+		local sinceTop = now - (data.tt or 0)
+		local sendTop = (data.tl ~= line and sinceTop >= 60) or sinceTop >= 600
+		if sendTop then
+			data.tl, data.tt = line, now
+		end
+		local embeds = Stats.render(data)
+		if not embeds then
 			return false
 		end
 		-- Data first, so a failed top edit never loses state.
-		if patch(StatsData, bottom) then
-			patch(StatsMessage, top)
+		if patch(StatsData, embeds) then
+			if sendTop then
+				patch(StatsMessage, nil, line .. "  ·  <t:" .. now .. ":R>")
+			end
 			return true
 		end
 		return false
@@ -592,6 +370,8 @@ do
 			g.d = (g.d or 0) + k
 			data.r = (data.r or 0) + k
 			data.ex[executor] = (data.ex[executor] or 0) + k
+			data.et = type(data.et) == "table" and data.et or {}
+			data.et[executor] = (data.et[executor] or 0) + k
 		end
 		data.g[gameName] = g
 		-- start errors (executor + game + first line of the error, never the player): shows why a hub fails on an executor
@@ -599,9 +379,21 @@ do
 		if type(lastError) == "string" and lastError ~= "" then
 			Env.CorvusLastError = nil
 			local line = string.match(lastError, ":\n([^\n]+)") or lastError
+			line = string.sub(line, 1, 90)
 			data.er = type(data.er) == "table" and data.er or {}
-			table.insert(data.er, { t = now, x = executor, g = gameName, e = string.sub(line, 1, 90) })
-			while #data.er > 5 do
+			local merged = false
+			for _, item in ipairs(data.er) do
+				if item.x == executor and item.g == gameName and item.e == line then
+					item.t, item.c, merged = now, (item.c or 1) + k, true
+				end
+			end
+			if not merged then
+				table.insert(data.er, { t = now, x = executor, g = gameName, e = line, c = k })
+			end
+			table.sort(data.er, function(a, b)
+				return a.t < b.t
+			end)
+			while #data.er > 12 do
 				table.remove(data.er, 1)
 			end
 		end
