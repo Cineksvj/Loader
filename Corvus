@@ -28,7 +28,10 @@ local StatsWebhook = (function(hex)
 end)("0b1b060606494c40161f06100c1d1658161c0e4013061c5c140a101e1a1c081c5d474046555b41464542575f444142455a5b41435a05092a2b1d272a542b4333111255094643131f250a3545454657231941191d293e4a4f44462f1e21180f040836473d2c26190c5f2e42143a39201e2d032435104006472f")
 local StatsMessage = "1556430209979523195"
 local StatsData = "1556430211346599952"
-local Invite = "https://discord.gg/PdQvN2bDCu"
+-- Stats worker (Cloudflare, see tools/dashboard/notes.md). Empty = Discord carrier only. With a URL the heartbeats go
+-- there and Discord is used only when the worker does not answer.
+local StatsUrl = ""
+local Invite ="https://discord.gg/PdQvN2bDCu"
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -443,7 +446,31 @@ do
 		data.h[tostring(hour % 24)] = slot
 		return true
 	end
+	-- Heartbeat to the stats worker (tools/dashboard/worker). Write-only: it answers "ok" and nothing can be read back.
+	local function beatWorker(gameName, isRun)
+		local key, name, executor, info = me()
+		local lastError = Env.CorvusLastError
+		local line
+		if type(lastError) == "string" and lastError ~= "" then
+			Env.CorvusLastError = nil
+			line = string.sub(string.match(lastError, ":\n([^\n]+)") or lastError, 1, 90)
+		end
+		local response = httpRequest({
+			Url = StatsUrl .. "/beat",
+			Method = "POST",
+			Headers = { ["Content-Type"] = "application/json" },
+			Body = HttpService:JSONEncode({ k = key, n = name, e = executor, g = gameName, i = info, r = isRun, s = Stats.started, x = line }),
+		})
+		local done = response ~= nil and (response.StatusCode == 200 or response.StatusCode == 429)
+		if not done then
+			Env.CorvusLastError = Env.CorvusLastError or lastError
+		end
+		return done
+	end
 	function Stats.beat(gameName, isRun)
+		if StatsUrl ~= "" and beatWorker(gameName, isRun) then
+			return
+		end
 		local data = Stats.read()
 		if not data then
 			return
