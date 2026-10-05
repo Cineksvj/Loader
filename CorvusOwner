@@ -512,35 +512,107 @@ end
 Env.CorvusStats = Stats
 
 -- Xeno/Solara time out or return empty bodies on the big hub files: fetch with retries and check the size
+-- Returns src, err, seconds. A single download over 20 s is warned about (that is the "nothing shows for minutes" case).
 local function fetchHub(url)
 	local lastErr = "empty response"
+	local began = os.clock()
 	for attempt = 1, 4 do
+		local tried = os.clock()
 		local ok, src = pcall(game.HttpGet, game, url)
+		local took = os.clock() - tried
+		if took > 20 then
+			warn(string.format("[Corvus] hub download attempt %d took %.1fs", attempt, took))
+		end
 		if ok and type(src) == "string" and #src > 10000 then
-			return src
+			return src, nil, os.clock() - began
 		end
 		lastErr = ok and ("short response " .. tostring(type(src) == "string" and #src or src)) or tostring(src)
 		task.wait(attempt)
 	end
-	return nil, lastErr
+	return nil, lastErr, os.clock() - began
+end
+
+-- The staging loader (OwnerLoader) is the owner's: a start that errors or shows no window within 60 s is re-executed.
+local OwnerMode = string.find(Repo, "/staging/", 1, true) ~= nil
+
+-- Downloads and runs the hub. Times go to getgenv().CorvusLoaderTimes; the library adds them to its LOAD log line.
+local function runHub()
+	local times = { begin = os.clock() }
+	Env.CorvusLoaderTimes = times
+	local src, err, took = fetchHub(Repo .. entry.file)
+	times.fetch = took
+	if not src then
+		error("download failed: " .. tostring(err))
+	end
+	local compiledAt = os.clock()
+	local fn, compileErr = loadstring(src)
+	times.compile = os.clock() - compiledAt
+	print(string.format("[Corvus] LOAD fetch=%.1f compile=%.1f", times.fetch or 0, times.compile))
+	if not fn then
+		error("compile failed: " .. tostring(compileErr))
+	end
+	times.run = os.clock()
+	return fn()
 end
 
 if entry then
 	Stats.start(entry.name)
-	local ok, result = pcall(function()
-		local src, err = fetchHub(Repo .. entry.file)
-		if not src then
-			error("download failed: " .. tostring(err))
+	local ok, result = true, nil
+	if OwnerMode then
+		for attempt = 1, 4 do
+			-- a re-run must not be stopped by the hub's own "Already starting" guard
+			Env.CorvusLoaded, Env.CorvusBooting, Env.CorvusLastError = nil, nil, nil
+			local state = { done = false }
+			local thread = task.spawn(function()
+				local okRun, err = pcall(runHub)
+				state.ok, state.err, state.done = okRun, err, true
+			end)
+			local started, sawError = os.clock(), nil
+			while not state.done and os.clock() - started < 60 do
+				if type(Env.CorvusLastError) == "string" then
+					sawError = Env.CorvusLastError
+				end
+				task.wait(0.5)
+			end
+			sawError = sawError or (if type(Env.CorvusLastError) == "string" then Env.CorvusLastError else nil)
+			local reason
+			if state.done and not state.ok then
+				reason = "error: " .. tostring(state.err)
+			elseif state.done and sawError then
+				reason = "error: " .. tostring(sawError)
+			elseif not state.done and not Env.CorvusLoaded then
+				reason = "no window after 60 s"
+			end
+			if not reason then
+				break
+			end
+			ok, result = false, reason
+			if attempt == 4 then
+				Env.CorvusLastError = sawError or ("[Corvus] " .. entry.name .. " failed to load:\n" .. reason)
+				break
+			end
+			warn(string.format("[Corvus] owner: start attempt %d failed (%s), re-executing (%d left)", attempt, string.sub(reason, 1, 200), 4 - attempt))
+			if not state.done then
+				pcall(task.cancel, thread)
+			end
+			-- the next run's library closes the old window; close it here too in case the old run hangs half built
+			pcall(function()
+				local old = Env.CorvusLibrary
+				if type(old) == "table" and not old.Unloaded and type(old.Unload) == "function" then
+					old:Unload()
+				end
+			end)
+			task.wait(1)
 		end
-		local fn, compileErr = loadstring(src)
-		if not fn then
-			error("compile failed: " .. tostring(compileErr))
+		if not ok then
+			warn("[Corvus] Failed to load " .. entry.name .. " after 4 tries: " .. tostring(result))
 		end
-		return fn()
-	end)
-	if not ok then
-		warn("[Corvus] Failed to load " .. entry.name .. ": " .. tostring(result))
-		Env.CorvusLastError = "[Corvus] " .. entry.name .. " failed to load:\n" .. tostring(result)
+	else
+		ok, result = pcall(runHub)
+		if not ok then
+			warn("[Corvus] Failed to load " .. entry.name .. ": " .. tostring(result))
+			Env.CorvusLastError = "[Corvus] " .. entry.name .. " failed to load:\n" .. tostring(result)
+		end
 	end
 	if Env.CorvusLastError then
 		-- report the start error right away instead of waiting for the next heartbeat
