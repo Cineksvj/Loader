@@ -594,6 +594,17 @@ do
 			data.ex[executor] = (data.ex[executor] or 0) + k
 		end
 		data.g[gameName] = g
+		-- start errors (executor + game + first line of the error, never the player): shows why a hub fails on an executor
+		local lastError = Env.CorvusLastError
+		if type(lastError) == "string" and lastError ~= "" then
+			Env.CorvusLastError = nil
+			local line = string.match(lastError, ":\n([^\n]+)") or lastError
+			data.er = type(data.er) == "table" and data.er or {}
+			table.insert(data.er, { t = now, x = executor, g = gameName, e = string.sub(line, 1, 90) })
+			while #data.er > 5 do
+				table.remove(data.er, 1)
+			end
+		end
 		local isNew = not bitmapHas(data.ev, EverBits, key)
 		if isNew then
 			data.nw = (data.nw or 0) + k
@@ -676,6 +687,11 @@ if entry then
 	end)
 	if not ok then
 		warn("[Corvus] Failed to load " .. entry.name .. ": " .. tostring(result))
+		Env.CorvusLastError = "[Corvus] " .. entry.name .. " failed to load:\n" .. tostring(result)
+	end
+	if Env.CorvusLastError then
+		-- report the start error right away instead of waiting for the next heartbeat
+		task.spawn(pcall, Stats.beat, entry.name, false)
 	end
 else
 	warn("[Corvus] This game is not supported yet: " .. tostring(game.PlaceId))
