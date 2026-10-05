@@ -16,6 +16,10 @@ local Games = {
 	[124216119978534] = { name = "Ride A Pet", file = "Ride%20A%20Pet" },
 	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
 	[185655149] = { name = "Welcome to Bloxburg", file = "Welcome%20to%20Bloxburg" },
+	[135621866300031] = { name = "Bizarre", file = "Bizarre" },
+	[118315378611589] = { name = "Voltline Electric Scooters", file = "Voltline%20Electric%20Scooters" },
+	[111543903102439] = { name = "+1 Stone Skipping", file = "%2B1%20Stone%20Skipping" },
+	[107778070777162] = { name = "Steal An Egg", file = "Steal%20An%20Egg" },
 }
 local StatsWebhook = (function(hex)
 	local key = "corvus"
@@ -486,6 +490,11 @@ do
 		end
 		Env.CorvusStatsRunning = true
 		Stats.started = os.time()
+		-- read by the hub's log telemetry (same player key hash as the heartbeat, never the nickname)
+		Stats.game, Stats.url = gameName, StatsUrl
+		Stats.playerKey = function()
+			return (me())
+		end
 		task.spawn(function()
 			-- The first beat waits a bit so the hub can register its status line.
 			task.wait(math.random(15, 40))
@@ -552,13 +561,16 @@ if entry then
 				return okJson and type(data) == "table" and data[entry.name] or nil
 			end
 			local current = version()
+			-- players complained about reloads every 30 min on busy days: check every 15 min, reload at most once per 2 h
+			local lastReload = 0
 			while true do
-				task.wait(180 + math.random() * 60)
+				task.wait(900 + math.random() * 120)
 				local latest = version()
 				if latest and current == nil then
 					current = latest
-				elseif latest and latest ~= current and Env.CorvusAutoUpdate ~= false then
+				elseif latest and latest ~= current and Env.CorvusAutoUpdate ~= false and os.clock() - lastReload >= 7200 then
 					current = latest
+					lastReload = os.clock()
 					pcall(function()
 						game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Corvus", Text = "New version found, updating the hub...", Duration = 6 })
 					end)
