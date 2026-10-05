@@ -325,16 +325,21 @@ do
 				info = string.sub((string.gsub(text, "[\r\n]", " ")), 1, 70)
 			end
 		end
-		local executor = "Unknown"
+		-- identifyexecutor() returns the name and (on most executors) the version
+		local executor, version = "Unknown", nil
 		pcall(function()
-			executor = string.sub(tostring((identifyexecutor())), 1, 20)
+			local n, v = identifyexecutor()
+			executor = string.sub(tostring(n), 1, 20)
+			if v ~= nil then
+				version = string.sub(tostring(v), 1, 24)
+			end
 		end)
 		local key = string.format("%08x", (player.UserId * 2654435761) % 4294967296)
 		local name = "Anonymous"
 		if not anonymous then
 			name = if player.DisplayName ~= player.Name then player.DisplayName .. " (@" .. player.Name .. ")" else "@" .. player.Name
 		end
-		return key, name, executor, info
+		return key, name, executor, info, version
 	end
 	-- With many players not everyone writes: each writes with chance 1/k and counts as k, which keeps the messages
 	-- under Discord's limit of about 5 edits per 2 seconds per webhook.
@@ -450,7 +455,7 @@ do
 	end
 	-- Heartbeat to the stats worker (tools/dashboard/worker). Write-only: it answers "ok" and nothing can be read back.
 	local function beatWorker(gameName, isRun)
-		local key, name, executor, info = me()
+		local key, name, executor, info, version = me()
 		local lastError = Env.CorvusLastError
 		local line
 		if type(lastError) == "string" and lastError ~= "" then
@@ -461,7 +466,7 @@ do
 			Url = StatsUrl .. "/beat",
 			Method = "POST",
 			Headers = { ["Content-Type"] = "application/json" },
-			Body = HttpService:JSONEncode({ k = key, n = name, e = executor, g = gameName, i = info, r = isRun, s = Stats.started, x = line, pv = game.PlaceVersion }),
+			Body = HttpService:JSONEncode({ k = key, n = name, e = executor, ev = version, g = gameName, i = info, r = isRun, s = Stats.started, x = line, pv = game.PlaceVersion }),
 		})
 		local done = response ~= nil and (response.StatusCode == 200 or response.StatusCode == 429)
 		if not done then
