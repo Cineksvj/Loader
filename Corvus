@@ -499,10 +499,32 @@ do
 end
 Env.CorvusStats = Stats
 
+-- Xeno/Solara time out or return empty bodies on the big hub files: fetch with retries and check the size
+local function fetchHub(url)
+	local lastErr = "empty response"
+	for attempt = 1, 4 do
+		local ok, src = pcall(game.HttpGet, game, url)
+		if ok and type(src) == "string" and #src > 10000 then
+			return src
+		end
+		lastErr = ok and ("short response " .. tostring(type(src) == "string" and #src or src)) or tostring(src)
+		task.wait(attempt)
+	end
+	return nil, lastErr
+end
+
 if entry then
 	Stats.start(entry.name)
 	local ok, result = pcall(function()
-		return loadstring(game:HttpGet(Repo .. entry.file))()
+		local src, err = fetchHub(Repo .. entry.file)
+		if not src then
+			error("download failed: " .. tostring(err))
+		end
+		local fn, compileErr = loadstring(src)
+		if not fn then
+			error("compile failed: " .. tostring(compileErr))
+		end
+		return fn()
 	end)
 	if not ok then
 		warn("[Corvus] Failed to load " .. entry.name .. ": " .. tostring(result))
@@ -541,7 +563,11 @@ if entry then
 						game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Corvus", Text = "New version found, updating the hub...", Duration = 6 })
 					end)
 					local okLoad, err = pcall(function()
-						return loadstring(game:HttpGet(Repo .. entry.file .. "?v=" .. latest))()
+						local src, fetchErr = fetchHub(Repo .. entry.file .. "?v=" .. latest)
+						if not src then
+							error(fetchErr)
+						end
+						return loadstring(src)()
 					end)
 					if not okLoad then
 						warn("[Corvus] Update failed: " .. tostring(err))
