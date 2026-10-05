@@ -16,6 +16,7 @@ local Games = {
 	[74629631798007] = { name = "Pets Universe", file = "Pets%20Universe" },
 	[124216119978534] = { name = "Ride A Pet", file = "Ride%20A%20Pet" },
 	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
+	[185655149] = { name = "Welcome to Bloxburg", file = "Welcome%20to%20Bloxburg" },
 }
 local StatsWebhook = (function(hex)
 	local key = "corvus"
