@@ -693,6 +693,44 @@ if entry then
 		-- report the start error right away instead of waiting for the next heartbeat
 		task.spawn(pcall, Stats.beat, entry.name, false)
 	end
+	-- Auto update: tools/github_upload.py keeps "Versions" ({hub name: hash}) next to the hubs. Every 3-4 minutes the
+	-- loader compares it and, when this game's hub changed, loads the new one (the library closes the old window and
+	-- the old instance stops itself). getgenv().CorvusAutoUpdate = false turns it off.
+	if not Env.CorvusUpdateWatcher then
+		Env.CorvusUpdateWatcher = true
+		task.spawn(function()
+			local jsonService = game:GetService("HttpService")
+			local function version()
+				local ok, text = pcall(function()
+					return game:HttpGet(Repo .. "Versions?t=" .. tostring(os.time()))
+				end)
+				if not ok or type(text) ~= "string" then
+					return nil
+				end
+				local okJson, data = pcall(jsonService.JSONDecode, jsonService, text)
+				return okJson and type(data) == "table" and data[entry.name] or nil
+			end
+			local current = version()
+			while true do
+				task.wait(180 + math.random() * 60)
+				local latest = version()
+				if latest and current == nil then
+					current = latest
+				elseif latest and latest ~= current and Env.CorvusAutoUpdate ~= false then
+					current = latest
+					pcall(function()
+						game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Corvus", Text = "New version found, updating the hub...", Duration = 6 })
+					end)
+					local okLoad, err = pcall(function()
+						return loadstring(game:HttpGet(Repo .. entry.file .. "?v=" .. latest))()
+					end)
+					if not okLoad then
+						warn("[Corvus] Update failed: " .. tostring(err))
+					end
+				end
+			end
+		end)
+	end
 else
 	warn("[Corvus] This game is not supported yet: " .. tostring(game.PlaceId))
 end
