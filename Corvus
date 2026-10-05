@@ -459,7 +459,7 @@ do
 			Url = StatsUrl .. "/beat",
 			Method = "POST",
 			Headers = { ["Content-Type"] = "application/json" },
-			Body = HttpService:JSONEncode({ k = key, n = name, e = executor, g = gameName, i = info, r = isRun, s = Stats.started, x = line }),
+			Body = HttpService:JSONEncode({ k = key, n = name, e = executor, g = gameName, i = info, r = isRun, s = Stats.started, x = line, pv = game.PlaceVersion }),
 		})
 		local done = response ~= nil and (response.StatusCode == 200 or response.StatusCode == 429)
 		if not done then
