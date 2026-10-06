@@ -8,15 +8,27 @@
 -- Filled in by tools/github_upload.py when the loader is uploaded (raw URL of the repo that holds the hubs).
 local Repo = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/staging/"
 local Games = {
-	[118805555015549] = { name = "Loot To Forge", file = "%2B1%20Loot%20To%20Forge" },
+	[111543903102439] = { name = "+1 Stone Skipping", file = "%2B1%20Stone%20Skipping" },
 	[113290951185459] = { name = "Anime Dice", file = "Anime%20Dice" },
+	[96510596525082] = { name = "Ball VS Ball", file = "Ball%20VS%20Ball" },
+	[132767904294856] = { name = "Blue Lock Farm", file = "Blue%20Lock%20Farm" },
 	[114326934417838] = { name = "Break and Steal an Egg", file = "Break%20and%20Steal%20an%20Egg" },
+	[537413528] = { name = "Build A Boat For Treasure", file = "Build%20A%20Boat%20For%20Treasure" },
+	[78490532994307] = { name = "Build An Ant Empire", file = "Build%20An%20Ant%20Empire" },
+	[105011592530400] = { name = "Build and Kill Zombies", file = "Build%20and%20Kill%20Zombies" },
+	[132239307080610] = { name = "Deep Fishing", file = "Deep%20Fishing" },
+	[120656419209274] = { name = "Drill for Eggs", file = "Drill%20for%20Eggs" },
+	[107535308163741] = { name = "Huss Valley", file = "Huss%20Valley" },
+	[118805555015549] = { name = "Loot To Forge", file = "%2B1%20Loot%20To%20Forge" },
 	[88047783411976] = { name = "Open Sea For Animals", file = "Open%20Sea%20For%20Animals" },
 	[74629631798007] = { name = "Pets Universe", file = "Pets%20Universe" },
 	[124216119978534] = { name = "Ride A Pet", file = "Ride%20A%20Pet" },
+	[87740422849523] = { name = "Steal A Car", file = "Steal%20A%20Car" },
+	[99679692310083] = { name = "Steal Animal Egg", file = "Steal%20Animal%20Egg" },
+	[82081400078378] = { name = "Steal ASMR", file = "Steal%20ASMR" },
 	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
+	[122245938604556] = { name = "Tongue Escape", file = "Tongue%20Escape" },
 	[185655149] = { name = "Welcome to Bloxburg", file = "Welcome%20to%20Bloxburg" },
-	[111543903102439] = { name = "+1 Stone Skipping", file = "%2B1%20Stone%20Skipping" },
 }
 local StatsWebhook = (function(hex)
 	local key = "corvus"
@@ -313,6 +325,22 @@ do
 		end
 		return false
 	end
+	-- 32-bit FNV-1a over the decimal user id with an avalanche step, all products kept below 2^53 (the old
+	-- UserId * 2654435761 lost its low bits in double precision, so keys ended in 000 and collided in the bitmaps).
+	local function mul32(a, b)
+		return ((bit32.rshift(a, 16) * b % 65536) * 65536 + bit32.band(a, 65535) * b) % 4294967296
+	end
+	local function playerKey(userId)
+		local text = string.format("%.0f", userId)
+		local h = 2166136261
+		for i = 1, #text do
+			h = mul32(bit32.bxor(h, string.byte(text, i)), 16777619)
+		end
+		h = bit32.bxor(h, bit32.rshift(h, 15))
+		h = mul32(h, 739982445)
+		h = bit32.bxor(h, bit32.rshift(h, 13))
+		return string.format("%08x", h)
+	end
 	local function me()
 		local player = Players.LocalPlayer
 		local live = Env.CorvusLive
@@ -334,7 +362,7 @@ do
 				version = string.sub(tostring(v), 1, 24)
 			end
 		end)
-		local key = string.format("%08x", (player.UserId * 2654435761) % 4294967296)
+		local key = playerKey(player.UserId)
 		local name = "Anonymous"
 		if not anonymous then
 			name = if player.DisplayName ~= player.Name then player.DisplayName .. " (@" .. player.Name .. ")" else "@" .. player.Name
