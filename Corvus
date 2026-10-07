@@ -8,18 +8,27 @@
 -- Filled in by tools/github_upload.py when the loader is uploaded (raw URL of the repo that holds the hubs).
 local Repo = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/"
 local Games = {
-	[118805555015549] = { name = "Loot To Forge", file = "%2B1%20Loot%20To%20Forge" },
+	[111543903102439] = { name = "+1 Stone Skipping", file = "%2B1%20Stone%20Skipping" },
 	[113290951185459] = { name = "Anime Dice", file = "Anime%20Dice" },
+	[96510596525082] = { name = "Ball VS Ball", file = "Ball%20VS%20Ball" },
+	[132767904294856] = { name = "Blue Lock Farm", file = "Blue%20Lock%20Farm" },
 	[114326934417838] = { name = "Break and Steal an Egg", file = "Break%20and%20Steal%20an%20Egg" },
+	[537413528] = { name = "Build A Boat For Treasure", file = "Build%20A%20Boat%20For%20Treasure" },
+	[78490532994307] = { name = "Build An Ant Empire", file = "Build%20An%20Ant%20Empire" },
+	[105011592530400] = { name = "Build and Kill Zombies", file = "Build%20and%20Kill%20Zombies" },
+	[132239307080610] = { name = "Deep Fishing", file = "Deep%20Fishing" },
+	[120656419209274] = { name = "Drill for Eggs", file = "Drill%20for%20Eggs" },
+	[107535308163741] = { name = "Huss Valley", file = "Huss%20Valley" },
+	[118805555015549] = { name = "+1 Loot To Forge", file = "%2B1%20Loot%20To%20Forge" },
 	[88047783411976] = { name = "Open Sea For Animals", file = "Open%20Sea%20For%20Animals" },
 	[74629631798007] = { name = "Pets Universe", file = "Pets%20Universe" },
 	[124216119978534] = { name = "Ride A Pet", file = "Ride%20A%20Pet" },
+	[87740422849523] = { name = "Steal A Car", file = "Steal%20A%20Car" },
+	-- [99679692310083] = Steal Animal Egg (not released yet)
+	[82081400078378] = { name = "Steal ASMR", file = "Steal%20ASMR" },
 	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
+	[122245938604556] = { name = "Tongue Escape", file = "Tongue%20Escape" },
 	[185655149] = { name = "Welcome to Bloxburg", file = "Welcome%20to%20Bloxburg" },
-	[135621866300031] = { name = "Bizarre", file = "Bizarre" },
-	[118315378611589] = { name = "Voltline Electric Scooters", file = "Voltline%20Electric%20Scooters" },
-	[111543903102439] = { name = "+1 Stone Skipping", file = "%2B1%20Stone%20Skipping" },
-	[107778070777162] = { name = "Steal An Egg", file = "Steal%20An%20Egg" },
 }
 local StatsWebhook = (function(hex)
 	local key = "corvus"
@@ -40,6 +49,7 @@ local Invite ="https://discord.gg/PdQvN2bDCu"
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Env = (getgenv and getgenv()) or _G
+Env.CorvusHubRepo = Repo -- hubs read the Codes list from here
 local entry = Games[game.PlaceId]
 
 local Stats = {}
@@ -315,6 +325,22 @@ do
 		end
 		return false
 	end
+	-- 32-bit FNV-1a over the decimal user id with an avalanche step, all products kept below 2^53 (the old
+	-- UserId * 2654435761 lost its low bits in double precision, so keys ended in 000 and collided in the bitmaps).
+	local function mul32(a, b)
+		return ((bit32.rshift(a, 16) * b % 65536) * 65536 + bit32.band(a, 65535) * b) % 4294967296
+	end
+	local function playerKey(userId)
+		local text = string.format("%.0f", userId)
+		local h = 2166136261
+		for i = 1, #text do
+			h = mul32(bit32.bxor(h, string.byte(text, i)), 16777619)
+		end
+		h = bit32.bxor(h, bit32.rshift(h, 15))
+		h = mul32(h, 739982445)
+		h = bit32.bxor(h, bit32.rshift(h, 13))
+		return string.format("%08x", h)
+	end
 	local function me()
 		local player = Players.LocalPlayer
 		local live = Env.CorvusLive
@@ -327,16 +353,21 @@ do
 				info = string.sub((string.gsub(text, "[\r\n]", " ")), 1, 70)
 			end
 		end
-		local executor = "Unknown"
+		-- identifyexecutor() returns the name and (on most executors) the version
+		local executor, version = "Unknown", nil
 		pcall(function()
-			executor = string.sub(tostring((identifyexecutor())), 1, 20)
+			local n, v = identifyexecutor()
+			executor = string.sub(tostring(n), 1, 20)
+			if v ~= nil then
+				version = string.sub(tostring(v), 1, 24)
+			end
 		end)
-		local key = string.format("%08x", (player.UserId * 2654435761) % 4294967296)
+		local key = playerKey(player.UserId)
 		local name = "Anonymous"
 		if not anonymous then
 			name = if player.DisplayName ~= player.Name then player.DisplayName .. " (@" .. player.Name .. ")" else "@" .. player.Name
 		end
-		return key, name, executor, info
+		return key, name, executor, info, version
 	end
 	-- With many players not everyone writes: each writes with chance 1/k and counts as k, which keeps the messages
 	-- under Discord's limit of about 5 edits per 2 seconds per webhook.
@@ -452,7 +483,7 @@ do
 	end
 	-- Heartbeat to the stats worker (tools/dashboard/worker). Write-only: it answers "ok" and nothing can be read back.
 	local function beatWorker(gameName, isRun)
-		local key, name, executor, info = me()
+		local key, name, executor, info, version = me()
 		local lastError = Env.CorvusLastError
 		local line
 		if type(lastError) == "string" and lastError ~= "" then
@@ -463,7 +494,7 @@ do
 			Url = StatsUrl .. "/beat",
 			Method = "POST",
 			Headers = { ["Content-Type"] = "application/json" },
-			Body = HttpService:JSONEncode({ k = key, n = name, e = executor, g = gameName, i = info, r = isRun, s = Stats.started, x = line, pv = game.PlaceVersion }),
+			Body = HttpService:JSONEncode({ k = key, n = name, e = executor, ev = version, g = gameName, i = info, r = isRun, s = Stats.started, x = line, pv = game.PlaceVersion }),
 		})
 		local done = response ~= nil and (response.StatusCode == 200 or response.StatusCode == 429)
 		if not done then
@@ -509,35 +540,107 @@ end
 Env.CorvusStats = Stats
 
 -- Xeno/Solara time out or return empty bodies on the big hub files: fetch with retries and check the size
+-- Returns src, err, seconds. A single download over 20 s is warned about (that is the "nothing shows for minutes" case).
 local function fetchHub(url)
 	local lastErr = "empty response"
+	local began = os.clock()
 	for attempt = 1, 4 do
+		local tried = os.clock()
 		local ok, src = pcall(game.HttpGet, game, url)
+		local took = os.clock() - tried
+		if took > 20 then
+			warn(string.format("[Corvus] hub download attempt %d took %.1fs", attempt, took))
+		end
 		if ok and type(src) == "string" and #src > 10000 then
-			return src
+			return src, nil, os.clock() - began
 		end
 		lastErr = ok and ("short response " .. tostring(type(src) == "string" and #src or src)) or tostring(src)
 		task.wait(attempt)
 	end
-	return nil, lastErr
+	return nil, lastErr, os.clock() - began
+end
+
+-- The staging loader (OwnerLoader) is the owner's: a start that errors or shows no window within 60 s is re-executed.
+local OwnerMode = string.find(Repo, "/staging/", 1, true) ~= nil
+
+-- Downloads and runs the hub. Times go to getgenv().CorvusLoaderTimes; the library adds them to its LOAD log line.
+local function runHub()
+	local times = { begin = os.clock() }
+	Env.CorvusLoaderTimes = times
+	local src, err, took = fetchHub(Repo .. entry.file)
+	times.fetch = took
+	if not src then
+		error("download failed: " .. tostring(err))
+	end
+	local compiledAt = os.clock()
+	local fn, compileErr = loadstring(src)
+	times.compile = os.clock() - compiledAt
+	print(string.format("[Corvus] LOAD fetch=%.1f compile=%.1f", times.fetch or 0, times.compile))
+	if not fn then
+		error("compile failed: " .. tostring(compileErr))
+	end
+	times.run = os.clock()
+	return fn()
 end
 
 if entry then
 	Stats.start(entry.name)
-	local ok, result = pcall(function()
-		local src, err = fetchHub(Repo .. entry.file)
-		if not src then
-			error("download failed: " .. tostring(err))
+	local ok, result = true, nil
+	if OwnerMode then
+		for attempt = 1, 4 do
+			-- a re-run must not be stopped by the hub's own "Already starting" guard
+			Env.CorvusLoaded, Env.CorvusBooting, Env.CorvusLastError = nil, nil, nil
+			local state = { done = false }
+			local thread = task.spawn(function()
+				local okRun, err = pcall(runHub)
+				state.ok, state.err, state.done = okRun, err, true
+			end)
+			local started, sawError = os.clock(), nil
+			while not state.done and os.clock() - started < 60 do
+				if type(Env.CorvusLastError) == "string" then
+					sawError = Env.CorvusLastError
+				end
+				task.wait(0.5)
+			end
+			sawError = sawError or (if type(Env.CorvusLastError) == "string" then Env.CorvusLastError else nil)
+			local reason
+			if state.done and not state.ok then
+				reason = "error: " .. tostring(state.err)
+			elseif state.done and sawError then
+				reason = "error: " .. tostring(sawError)
+			elseif not state.done and not Env.CorvusLoaded then
+				reason = "no window after 60 s"
+			end
+			if not reason then
+				break
+			end
+			ok, result = false, reason
+			if attempt == 4 then
+				Env.CorvusLastError = sawError or ("[Corvus] " .. entry.name .. " failed to load:\n" .. reason)
+				break
+			end
+			warn(string.format("[Corvus] owner: start attempt %d failed (%s), re-executing (%d left)", attempt, string.sub(reason, 1, 200), 4 - attempt))
+			if not state.done then
+				pcall(task.cancel, thread)
+			end
+			-- the next run's library closes the old window; close it here too in case the old run hangs half built
+			pcall(function()
+				local old = Env.CorvusLibrary
+				if type(old) == "table" and not old.Unloaded and type(old.Unload) == "function" then
+					old:Unload()
+				end
+			end)
+			task.wait(1)
 		end
-		local fn, compileErr = loadstring(src)
-		if not fn then
-			error("compile failed: " .. tostring(compileErr))
+		if not ok then
+			warn("[Corvus] Failed to load " .. entry.name .. " after 4 tries: " .. tostring(result))
 		end
-		return fn()
-	end)
-	if not ok then
-		warn("[Corvus] Failed to load " .. entry.name .. ": " .. tostring(result))
-		Env.CorvusLastError = "[Corvus] " .. entry.name .. " failed to load:\n" .. tostring(result)
+	else
+		ok, result = pcall(runHub)
+		if not ok then
+			warn("[Corvus] Failed to load " .. entry.name .. ": " .. tostring(result))
+			Env.CorvusLastError = "[Corvus] " .. entry.name .. " failed to load:\n" .. tostring(result)
+		end
 	end
 	if Env.CorvusLastError then
 		-- report the start error right away instead of waiting for the next heartbeat
