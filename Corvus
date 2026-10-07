@@ -24,7 +24,7 @@ local Games = {
 	[74629631798007] = { name = "Pets Universe", file = "Pets%20Universe" },
 	[124216119978534] = { name = "Ride A Pet", file = "Ride%20A%20Pet" },
 	[87740422849523] = { name = "Steal A Car", file = "Steal%20A%20Car" },
-	-- [99679692310083] = Steal Animal Egg (not released yet)
+	[99679692310083] = { name = "Steal Animal Egg", file = "Steal%20Animal%20Egg" },
 	[82081400078378] = { name = "Steal ASMR", file = "Steal%20ASMR" },
 	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
 	[122245938604556] = { name = "Tongue Escape", file = "Tongue%20Escape" },
