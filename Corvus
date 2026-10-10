@@ -29,7 +29,7 @@ local Games = {
 	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
 	[122245938604556] = { name = "Tongue Escape", file = "Tongue%20Escape" },
 	[185655149] = { name = "Welcome to Bloxburg", file = "Welcome%20to%20Bloxburg" },
-	[72858262610964] = { name = "Tap Simulator: Reborn", file = "Tap%20Simulator" },
+	[72858262610964] = { name = "Tap Simulator: Reborn", file = "TapSimReborn" },
 }
 local StatsWebhook = (function(hex)
 	local key = "corvus"
@@ -552,7 +552,7 @@ local function fetchHub(url)
 		if took > 20 then
 			warn(string.format("[Corvus] hub download attempt %d took %.1fs", attempt, took))
 		end
-		if ok and type(src) == "string" and #src > 10000 then
+		if ok and type(src) == "string" and #src > 1000 then
 			return src, nil, os.clock() - began
 		end
 		lastErr = ok and ("short response " .. tostring(type(src) == "string" and #src or src)) or tostring(src)
