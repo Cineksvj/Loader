@@ -27,9 +27,9 @@ local Games = {
 	[99679692310083] = { name = "Steal Animal Egg", file = "Steal%20Animal%20Egg" },
 	[82081400078378] = { name = "Steal ASMR", file = "Steal%20ASMR" },
 	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
+	[72858262610964] = { name = "Tap Simulator Reborn", file = "Tap%20Simulator%20Reborn" },
 	[122245938604556] = { name = "Tongue Escape", file = "Tongue%20Escape" },
 	[185655149] = { name = "Welcome to Bloxburg", file = "Welcome%20to%20Bloxburg" },
-	[72858262610964] = { name = "Tap Simulator Reborn", file = "Tap%20Simulator%20Reborn" },
 }
 local StatsWebhook = (function(hex)
 	local key = "corvus"
@@ -56,7 +56,7 @@ local entry = Games[game.PlaceId]
 local Stats = {}
 do
 	local Online = 12 * 60 -- a listed player stays "online" 12 minutes after the last heartbeat
-	local Beat = 5 * 60 -- heartbeat every 5 to 6 minutes
+	local Beat = 20 * 60 -- heartbeat every 20 to 21 minutes (2026-10-13: 5 min x hundreds of players blew the free Cloudflare Durable Object quota, 100k requests/day)
 	local Window = 6 * 60 -- online counting window (bitmaps of the current and the previous window)
 	local KeepPlayers = 25 -- players kept in the online list
 	local TodayBits, EverBits, OnlineBits = 2048, 4096, 1024
@@ -552,7 +552,7 @@ local function fetchHub(url)
 		if took > 20 then
 			warn(string.format("[Corvus] hub download attempt %d took %.1fs", attempt, took))
 		end
-		if ok and type(src) == "string" and #src > 1000 then
+		if ok and type(src) == "string" and #src > 10000 then
 			return src, nil, os.clock() - began
 		end
 		lastErr = ok and ("short response " .. tostring(type(src) == "string" and #src or src)) or tostring(src)
