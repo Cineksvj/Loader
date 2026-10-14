@@ -584,7 +584,226 @@ local function runHub()
 	return fn()
 end
 
-if entry then
+-- Owner decision 2026-10-14: only these two games still get the hub. Every other known place only shows the notice below.
+local Supported = {
+	[114326934417838] = true,
+	[72858262610964] = true,
+}
+
+local function showDiscontinued()
+	local httpGet = (typeof(syn) == "table" and syn.request) or (typeof(http) == "table" and http.request) or http_request or request
+	local old = Env.CorvusNoticeGui
+	if typeof(old) == "Instance" then
+		pcall(old.Destroy, old)
+	end
+	local parent
+	pcall(function()
+		parent = if type(gethui) == "function" then gethui() else nil
+	end)
+	parent = parent or game:GetService("CoreGui")
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "CorvusNotice"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 1000
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	pcall(function()
+		if typeof(syn) == "table" and syn.protect_gui then
+			syn.protect_gui(gui)
+		end
+	end)
+	if not pcall(function()
+		gui.Parent = parent
+	end) then
+		gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+	end
+	Env.CorvusNoticeGui = gui
+
+	local Back = Color3.fromRGB(6, 7, 11)
+	local Main = Color3.fromRGB(19, 21, 30)
+	local Accent = Color3.fromRGB(132, 176, 255)
+	local Outline = Color3.fromRGB(52, 57, 76)
+	local Text = Color3.fromRGB(245, 247, 255)
+	local Muted = Color3.fromRGB(150, 156, 178)
+	local Regular = Font.fromEnum(Enum.Font.BuilderSans)
+	local Bold = Font.fromEnum(Enum.Font.BuilderSansBold)
+	local Title = Bold
+	pcall(function()
+		Title = Font.new("rbxasset://fonts/families/Michroma.json", Enum.FontWeight.Regular)
+	end)
+
+	local function round(inst, radius)
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, radius)
+		c.Parent = inst
+	end
+	local function stroke(inst, color, thickness)
+		local s = Instance.new("UIStroke")
+		s.Color, s.Thickness, s.ApplyStrokeMode = color, thickness or 1, Enum.ApplyStrokeMode.Border
+		s.Parent = inst
+	end
+	local function label(parentInst, order, text, font, size, color, rich)
+		local l = Instance.new("TextLabel")
+		l.BackgroundTransparency = 1
+		l.Size = UDim2.new(1, 0, 0, 0)
+		l.AutomaticSize = Enum.AutomaticSize.Y
+		l.FontFace, l.TextSize, l.TextColor3 = font, size, color
+		l.TextWrapped, l.RichText = true, rich == true
+		l.TextXAlignment = Enum.TextXAlignment.Left
+		l.Text = text
+		l.LayoutOrder = order
+		l.Parent = parentInst
+		return l
+	end
+
+	local card = Instance.new("Frame")
+	card.AnchorPoint = Vector2.new(0.5, 0.5)
+	card.Position = UDim2.fromScale(0.5, 0.5)
+	card.Size = UDim2.new(0.92, 0, 0, 0)
+	card.AutomaticSize = Enum.AutomaticSize.Y
+	card.BackgroundColor3 = Main
+	card.BorderSizePixel = 0
+	card.Parent = gui
+	round(card, 12)
+	stroke(card, Outline, 1)
+	local limit = Instance.new("UISizeConstraint")
+	limit.MaxSize = Vector2.new(430, 10000)
+	limit.Parent = card
+	local pad = Instance.new("UIPadding")
+	for _, side in ipairs({ "PaddingTop", "PaddingBottom", "PaddingLeft", "PaddingRight" }) do
+		pad[side] = UDim.new(0, 18)
+	end
+	pad.Parent = card
+	local list = Instance.new("UIListLayout")
+	list.Padding = UDim.new(0, 10)
+	list.SortOrder = Enum.SortOrder.LayoutOrder
+	list.Parent = card
+
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.new(1, 0, 0, 3)
+	bar.BackgroundColor3 = Accent
+	bar.BorderSizePixel = 0
+	bar.LayoutOrder = 0
+	bar.Parent = card
+	round(bar, 2)
+
+	local header = Instance.new("Frame")
+	header.BackgroundTransparency = 1
+	header.Size = UDim2.new(1, 0, 0, 26)
+	header.LayoutOrder = 1
+	header.Parent = card
+	local title = label(header, 0, "CORVUS", Title, 20, Text)
+	title.Size = UDim2.new(1, -40, 1, 0)
+	title.AutomaticSize = Enum.AutomaticSize.None
+	title.TextYAlignment = Enum.TextYAlignment.Center
+	local close = Instance.new("TextButton")
+	close.AnchorPoint = Vector2.new(1, 0.5)
+	close.Position = UDim2.new(1, 0, 0.5, 0)
+	close.Size = UDim2.fromOffset(28, 28)
+	close.BackgroundColor3 = Back
+	close.AutoButtonColor = true
+	close.FontFace, close.TextSize, close.TextColor3, close.Text = Bold, 16, Muted, "X"
+	close.Parent = header
+	round(close, 8)
+	stroke(close, Outline, 1)
+	close.MouseButton1Click:Connect(function()
+		gui:Destroy()
+	end)
+
+	label(
+		card,
+		2,
+		"We're sorry, we discontinued updating this game. If you still want the old version, DM @Dalkoski or join our Discord to see which games are supported.",
+		Regular,
+		16,
+		Text
+	)
+
+	local stats = label(card, 3, '<font color="#808480">\u{25CF}</font> - online <font transparency="0.4">\u{00B7}</font> - members', Regular, 14, Muted, true)
+
+	local names = {}
+	for placeId, info in pairs(Games) do
+		if Supported[placeId] then
+			table.insert(names, info.name)
+		end
+	end
+	table.sort(names)
+	local box = Instance.new("Frame")
+	box.Size = UDim2.new(1, 0, 0, 0)
+	box.AutomaticSize = Enum.AutomaticSize.Y
+	box.BackgroundColor3 = Back
+	box.BorderSizePixel = 0
+	box.LayoutOrder = 4
+	box.Parent = card
+	round(box, 8)
+	stroke(box, Outline, 1)
+	local boxPad = Instance.new("UIPadding")
+	for _, side in ipairs({ "PaddingTop", "PaddingBottom", "PaddingLeft", "PaddingRight" }) do
+		boxPad[side] = UDim.new(0, 10)
+	end
+	boxPad.Parent = box
+	local boxList = Instance.new("UIListLayout")
+	boxList.Padding = UDim.new(0, 4)
+	boxList.SortOrder = Enum.SortOrder.LayoutOrder
+	boxList.Parent = box
+	label(box, 0, "SUPPORTED GAMES", Bold, 12, Muted)
+	for i, name in ipairs(names) do
+		label(box, i, "\u{2022} " .. name, Regular, 15, Text)
+	end
+
+	local copy = Instance.new("TextButton")
+	copy.Size = UDim2.new(1, 0, 0, 38)
+	copy.BackgroundColor3 = Accent
+	copy.AutoButtonColor = true
+	copy.FontFace, copy.TextSize, copy.TextColor3, copy.Text = Bold, 15, Back, "Copy Discord link"
+	copy.LayoutOrder = 5
+	copy.Parent = card
+	round(copy, 8)
+	copy.MouseButton1Click:Connect(function()
+		local ok = pcall(function()
+			setclipboard(Invite)
+		end)
+		copy.Text = if ok then "Copied!" else Invite
+		task.delay(2, function()
+			if copy.Parent then
+				copy.Text = "Copy Discord link"
+			end
+		end)
+	end)
+
+	-- Live numbers of the Discord community (same source as the hub's Info card); "-" when unavailable.
+	task.spawn(function()
+		local code = string.match(Invite, "discord%.gg/([%w%-_]+)")
+		if not code or type(httpGet) ~= "function" then
+			return
+		end
+		local ok, response = pcall(httpGet, { Url = "https://discord.com/api/v10/invites/" .. code .. "?with_counts=true", Method = "GET" })
+		if not ok or type(response) ~= "table" or response.StatusCode ~= 200 then
+			return
+		end
+		local okJson, data = pcall(HttpService.JSONDecode, HttpService, response.Body or "")
+		if not okJson or type(data) ~= "table" then
+			return
+		end
+		local online, members = tonumber(data.approximate_presence_count), tonumber(data.approximate_member_count)
+		local function fmt(n)
+			return if n then string.format("%d", n) else "-"
+		end
+		if stats.Parent then
+			stats.Text = string.format(
+				'<font color="#23a55a">\u{25CF}</font> %s online <font transparency="0.4">\u{00B7}</font> %s members',
+				fmt(online),
+				fmt(members)
+			)
+		end
+	end)
+end
+
+if entry and not Supported[game.PlaceId] then
+	Stats.start(entry.name)
+	pcall(showDiscontinued)
+	warn("[Corvus] " .. entry.name .. " is no longer supported (hub discontinued).")
+elseif entry then
 	Stats.start(entry.name)
 	local ok, result = true, nil
 	if OwnerMode then
