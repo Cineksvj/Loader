@@ -645,6 +645,7 @@ local function corvusLogo()
 end
 
 local function showDiscontinued()
+	local UNLOCK_CLICKS = 10 -- raven logo clicks (each within 3 s of the previous) that load the old hub
 	local httpGet = (typeof(syn) == "table" and syn.request) or (typeof(http) == "table" and http.request) or http_request or request
 	local TweenService = game:GetService("TweenService")
 	local RunService = game:GetService("RunService")
@@ -878,6 +879,43 @@ local function showDiscontinued()
 		}, logoFrame)
 	end
 
+	-- hidden unlock: clicking the logo UNLOCK_CLICKS times (gap <= 3 s) loads the old hub like the loader always did
+	local unlockButton = make("TextButton", {
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		ZIndex = 5,
+	}, logoFrame)
+	local clicks, lastClick, unlocked = 0, 0, false
+	unlockButton.MouseButton1Click:Connect(function()
+		if unlocked then
+			return
+		end
+		local now = os.clock()
+		clicks = if now - lastClick > 3 then 1 else clicks + 1
+		lastClick = now
+		if clicks < UNLOCK_CLICKS then
+			return
+		end
+		unlocked = true
+		tween(card, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { GroupTransparency = 1 })
+		tween(shellStroke, TweenInfo.new(0.3), { Transparency = 1 })
+		task.spawn(function()
+			task.wait(0.35)
+			pcall(gui.Destroy, gui)
+			if Env.CorvusNoticeGui == gui then
+				Env.CorvusNoticeGui = nil
+			end
+			local ok, result = pcall(runHub)
+			if not ok then
+				warn("[Corvus] Failed to load " .. entry.name .. ": " .. tostring(result))
+				Env.CorvusLastError = "[Corvus] " .. entry.name .. " failed to load:\n" .. tostring(result)
+				pcall(Stats.beat, entry.name, false)
+			end
+		end)
+	end)
+
 	-- spaced title with the accent gradient
 	local title = make("TextLabel", {
 		BackgroundTransparency = 1,
@@ -916,16 +954,30 @@ local function showDiscontinued()
 	round(plate, 12)
 	make("UIStroke", { Color = Outline, Transparency = 0.35, Thickness = 1 }, plate)
 	pad(plate, 14, 16)
+	make("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, plate)
 	make("TextLabel", {
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
 		FontFace = Regular,
+		LayoutOrder = 1,
 		LineHeight = 1.1,
 		Size = UDim2.new(1, 0, 0, 0),
 		Text = "We're sorry, we discontinued updating this game. If you still want the old version, DM @Dalkoski or join our Discord to see which games are supported.",
 		TextColor3 = Text,
 		TextSize = 15,
 		TextTransparency = 0.08,
+		TextWrapped = true,
+	}, plate)
+	make("TextLabel", {
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		FontFace = Regular,
+		LayoutOrder = 2,
+		Size = UDim2.new(1, 0, 0, 0),
+		Text = "Old versions are no longer maintained, please don't report bugs for them.",
+		TextColor3 = Text,
+		TextSize = 12,
+		TextTransparency = 0.55,
 		TextWrapped = true,
 	}, plate)
 
