@@ -644,7 +644,21 @@ local function corvusLogo()
 	return if ok and type(id) == "string" and id ~= "" then id else nil
 end
 
-local function showDiscontinued()
+-- Key card (owner 2026-10-18): BSE and Tap Sim ask for a plain weekly key posted on the Discord. No link shorteners.
+-- Change KEY here once a week and upload the loader; a saved key that no longer matches asks again.
+local KEY = "CorvusOnTop"
+local KeyFile = "Corvus/key.txt"
+local function keyMatches(text)
+	return type(text) == "string" and string.lower((string.gsub(text, "%s", ""))) == string.lower(KEY)
+end
+local function keySaved()
+	local ok, text = pcall(function()
+		return type(isfile) == "function" and isfile(KeyFile) and readfile(KeyFile) or nil
+	end)
+	return ok and keyMatches(text)
+end
+
+local function showDiscontinued(keyMode, onKey)
 	local UNLOCK_CLICKS = 10 -- raven logo clicks (each within 3 s of the previous) that load the old hub
 	local httpGet = (typeof(syn) == "table" and syn.request) or (typeof(http) == "table" and http.request) or http_request or request
 	local TweenService = game:GetService("TweenService")
@@ -888,8 +902,9 @@ local function showDiscontinued()
 		ZIndex = 5,
 	}, logoFrame)
 	local clicks, lastClick, unlocked = 0, 0, false
+	unlockButton.Visible = not keyMode
 	unlockButton.MouseButton1Click:Connect(function()
-		if unlocked then
+		if unlocked or keyMode then
 			return
 		end
 		local now = os.clock()
@@ -962,7 +977,9 @@ local function showDiscontinued()
 		LayoutOrder = 1,
 		LineHeight = 1.1,
 		Size = UDim2.new(1, 0, 0, 0),
-		Text = "We're sorry, we discontinued updating this game. If you still want the old version, DM @Dalkoski or join our Discord to see which games are supported.",
+		Text = if keyMode
+			then "We're testing how many people really use our hub, so this game now asks for a key. No Linkvertise, no LootLabs, no ads: the key is posted plainly on our Discord and changes only once a week."
+			else "We're sorry, we discontinued updating this game. If you still want the old version, DM @Dalkoski or join our Discord to see which games are supported.",
 		TextColor3 = Text,
 		TextSize = 15,
 		TextTransparency = 0.08,
@@ -974,7 +991,7 @@ local function showDiscontinued()
 		FontFace = Regular,
 		LayoutOrder = 2,
 		Size = UDim2.new(1, 0, 0, 0),
-		Text = "Old versions are no longer maintained, please don't report bugs for them.",
+		Text = if keyMode then "Enter the key once, it is remembered until next week's key." else "Old versions are no longer maintained, please don't report bugs for them.",
 		TextColor3 = Text,
 		TextSize = 12,
 		TextTransparency = 0.55,
@@ -1007,13 +1024,90 @@ local function showDiscontinued()
 		TextTransparency = 0.15,
 	}, pill)
 
+	-- key mode: key box + Unlock (the key is checked here; a right key is saved and the hub starts)
+	if keyMode then
+		local keyRow = make("Frame", { BackgroundTransparency = 1, LayoutOrder = 6, Size = UDim2.new(1, 0, 0, 40) }, content)
+		make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, keyRow)
+		local box = make("TextBox", {
+			BackgroundColor3 = Main,
+			BackgroundTransparency = 0.1,
+			BorderSizePixel = 0,
+			ClearTextOnFocus = false,
+			FontFace = Medium,
+			LayoutOrder = 1,
+			PlaceholderColor3 = Color3.fromRGB(128, 132, 150),
+			PlaceholderText = "Enter key",
+			Size = UDim2.new(1, -108, 1, 0),
+			Text = "",
+			TextColor3 = Text,
+			TextSize = 15,
+		}, keyRow)
+		round(box, 10)
+		local boxStroke = make("UIStroke", { Color = Outline, Transparency = 0.2, Thickness = 1 }, box)
+		local unlock = make("TextButton", {
+			AutoButtonColor = false,
+			BackgroundColor3 = Green,
+			BorderSizePixel = 0,
+			FontFace = Bold,
+			LayoutOrder = 2,
+			Size = UDim2.new(0, 100, 1, 0),
+			Text = "Unlock",
+			TextColor3 = Back,
+			TextSize = 15,
+		}, keyRow)
+		round(unlock, 10)
+		local done = false
+		local function submit()
+			if done then
+				return
+			end
+			if keyMatches(box.Text) then
+				done = true
+				pcall(function()
+					if type(isfolder) == "function" and not isfolder("Corvus") then
+						makefolder("Corvus")
+					end
+					writefile(KeyFile, KEY)
+				end)
+				unlock.Text = "Loading..."
+				tween(card, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { GroupTransparency = 1 })
+				tween(shellStroke, TweenInfo.new(0.3), { Transparency = 1 })
+				task.spawn(function()
+					task.wait(0.35)
+					pcall(gui.Destroy, gui)
+					if Env.CorvusNoticeGui == gui then
+						Env.CorvusNoticeGui = nil
+					end
+					if type(onKey) == "function" then
+						onKey()
+					end
+				end)
+			else
+				unlock.Text = "Wrong key"
+				boxStroke.Color = Color3.fromRGB(235, 90, 90)
+				task.delay(1.5, function()
+					if unlock.Parent and not done then
+						unlock.Text = "Unlock"
+						boxStroke.Color = Outline
+					end
+				end)
+			end
+		end
+		unlock.MouseButton1Click:Connect(submit)
+		box.FocusLost:Connect(function(enter)
+			if enter then
+				submit()
+			end
+		end)
+	end
+
 	-- primary button
 	local copy = make("TextButton", {
 		AutoButtonColor = false,
 		BackgroundColor3 = Accent,
 		BorderSizePixel = 0,
 		FontFace = Bold,
-		LayoutOrder = 6,
+		LayoutOrder = 7,
 		Size = UDim2.new(1, 0, 0, 40),
 		Text = "Copy Discord link",
 		TextColor3 = Back,
@@ -1027,7 +1121,7 @@ local function showDiscontinued()
 	make("TextLabel", {
 		BackgroundTransparency = 1,
 		FontFace = Regular,
-		LayoutOrder = 7,
+		LayoutOrder = 8,
 		Size = UDim2.new(1, 0, 0, 14),
 		Text = string.gsub(Invite, "^https?://", ""),
 		TextColor3 = Text,
@@ -1149,6 +1243,7 @@ if entry and not Supported[game.PlaceId] then
 	warn("[Corvus] " .. entry.name .. " is no longer supported (hub discontinued).")
 elseif entry then
 	Stats.start(entry.name)
+	local function startHub()
 	local ok, result = true, nil
 	if OwnerMode then
 		for attempt = 1, 4 do
@@ -1254,6 +1349,16 @@ elseif entry then
 				end
 			end
 		end)
+	end
+	end
+	-- the weekly key (owner 2026-10-18); the owner's staging loader skips it
+	if OwnerMode or keySaved() then
+		startHub()
+	else
+		local shown = pcall(showDiscontinued, true, startHub)
+		if not shown then
+			startHub()
+		end
 	end
 else
 	warn("[Corvus] This game is not supported yet: " .. tostring(game.PlaceId))
