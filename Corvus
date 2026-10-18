@@ -1262,7 +1262,8 @@ local function showDiscontinued(keyMode, onKey)
 	end)
 end
 
-if entry and not Supported[game.PlaceId] then
+-- owner 2026-10-18: every game in the list loads its hub again behind the weekly key (the discontinued notice is off)
+if entry and not Supported[game.PlaceId] and Env.CorvusShowDiscontinued == true then
 	Stats.start(entry.name)
 	pcall(showDiscontinued)
 	warn("[Corvus] " .. entry.name .. " is no longer supported (hub discontinued).")
