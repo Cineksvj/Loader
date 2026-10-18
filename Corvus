@@ -690,14 +690,42 @@ local function showDiscontinued(keyMode, onKey)
 		gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 	end
 	Env.CorvusNoticeGui = gui
+	if keyMode then
+		local dim = Instance.new("Frame")
+		dim.BackgroundColor3 = Color3.new(0, 0, 0)
+		dim.BackgroundTransparency = 1
+		dim.BorderSizePixel = 0
+		dim.Size = UDim2.fromScale(1, 1)
+		dim.ZIndex = 1
+		dim.Parent = gui
+		pcall(function()
+			TweenService:Create(dim, TweenInfo.new(0.4), { BackgroundTransparency = 0.45 }):Play()
+		end)
+		pcall(function()
+			local blur = Instance.new("BlurEffect")
+			blur.Name = "CorvusKeyBlur"
+			blur.Size = 0
+			blur.Parent = game:GetService("Lighting")
+			TweenService:Create(blur, TweenInfo.new(0.4), { Size = 14 }):Play()
+			gui.AncestryChanged:Connect(function()
+				if not gui.Parent then
+					blur:Destroy()
+				end
+			end)
+			gui.Destroying:Connect(function()
+				blur:Destroy()
+			end)
+		end)
+	end
 
 	-- Corvus Night scheme (library defaults) + the loading card's nebula accent
-	local Back = Color3.fromRGB(6, 7, 11)
-	local Main = Color3.fromRGB(19, 21, 30)
-	local Accent = Color3.fromRGB(132, 176, 255)
-	local Accent2 = Accent:Lerp(Color3.fromRGB(236, 242, 255), 0.6)
-	local Outline = Color3.fromRGB(52, 57, 76)
-	local Text = Color3.fromRGB(245, 247, 255)
+	-- silver scheme (owner 2026-10-18): graphite card, brushed-metal accents
+	local Back = Color3.fromRGB(7, 7, 9)
+	local Main = Color3.fromRGB(20, 21, 24)
+	local Accent = Color3.fromRGB(206, 211, 220)
+	local Accent2 = Color3.fromRGB(250, 251, 253)
+	local Outline = Color3.fromRGB(62, 64, 70)
+	local Text = Color3.fromRGB(242, 243, 246)
 	local Green = Color3.fromRGB(96, 214, 150)
 	local Regular = Font.fromEnum(Enum.Font.BuilderSans)
 	local Medium = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.Medium)
@@ -706,7 +734,52 @@ local function showDiscontinued(keyMode, onKey)
 	pcall(function()
 		TitleFont = Font.new("rbxasset://fonts/families/Michroma.json", Enum.FontWeight.Regular)
 	end)
-	local Nebula = ColorSequence.new(Accent, Accent2)
+	local Nebula = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(110, 115, 126)),
+		ColorSequenceKeypoint.new(0.3, Color3.fromRGB(248, 249, 251)),
+		ColorSequenceKeypoint.new(0.55, Color3.fromRGB(140, 145, 156)),
+		ColorSequenceKeypoint.new(0.8, Color3.fromRGB(232, 235, 240)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(110, 115, 126)),
+	})
+	local Metal = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+		ColorSequenceKeypoint.new(0.45, Color3.fromRGB(214, 218, 226)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 156, 168)),
+	})
+	-- a light band that sweeps across a button now and then (brushed-metal glint)
+	local function sheen(button, radius)
+		local band = Instance.new("Frame")
+		band.BackgroundColor3 = Color3.new(1, 1, 1)
+		band.BackgroundTransparency = 0.35
+		band.BorderSizePixel = 0
+		band.Size = UDim2.fromScale(1, 1)
+		band.ZIndex = button.ZIndex + 1
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, radius)
+		corner.Parent = band
+		local grad = Instance.new("UIGradient")
+		grad.Rotation = 20
+		grad.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.42, 1),
+			NumberSequenceKeypoint.new(0.5, 0.1),
+			NumberSequenceKeypoint.new(0.58, 1),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		grad.Offset = Vector2.new(-1, 0)
+		grad.Parent = band
+		band.Parent = button
+		task.spawn(function()
+			while band.Parent and gui.Parent do
+				grad.Offset = Vector2.new(-1, 0)
+				pcall(function()
+					TweenService:Create(grad, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), { Offset = Vector2.new(1, 0) }):Play()
+				end)
+				task.wait(3.2)
+			end
+		end)
+		return band
+	end
 	local Quick = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 	local function tween(inst, info, props)
@@ -999,8 +1072,9 @@ local function showDiscontinued(keyMode, onKey)
 		LineHeight = 1.25,
 		RichText = true,
 		Size = UDim2.new(1, 0, 0, 0),
+		TextXAlignment = if keyMode then Enum.TextXAlignment.Left else Enum.TextXAlignment.Center,
 		Text = if keyMode
-			then '<font color="#84b0ff"><b>1</b></font>  Join our Discord with the button below\n<font color="#84b0ff"><b>2</b></font>  Copy this week\'s key from the key channel\n<font color="#84b0ff"><b>3</b></font>  Paste it here and press Unlock'
+			then '<font color="#ffffff"><b>1</b></font>  Join our Discord with the button below\n<font color="#ffffff"><b>2</b></font>  Copy this week\'s key from the key channel\n<font color="#ffffff"><b>3</b></font>  Paste it here and press Unlock'
 			else "We're sorry, we discontinued updating this game. If you still want the old version, DM @Dalkoski or join our Discord to see which games are supported.",
 		TextColor3 = Text,
 		TextSize = 15,
@@ -1070,7 +1144,7 @@ local function showDiscontinued(keyMode, onKey)
 			box.FocusLost:Connect(function() tween(boxStroke, Quick, { Color = Outline, Thickness = 1 }) end)
 		local unlock = make("TextButton", {
 			AutoButtonColor = false,
-			BackgroundColor3 = Green,
+			BackgroundColor3 = Color3.new(1, 1, 1),
 			BorderSizePixel = 0,
 			FontFace = Bold,
 			LayoutOrder = 2,
@@ -1080,6 +1154,8 @@ local function showDiscontinued(keyMode, onKey)
 			TextSize = 15,
 		}, keyRow)
 		round(unlock, 10)
+		make("UIGradient", { Color = Metal, Rotation = 90 }, unlock)
+		sheen(unlock, 10)
 		local done = false
 		local function submit()
 			if done then
@@ -1143,10 +1219,18 @@ local function showDiscontinued(keyMode, onKey)
 		TextSize = 15,
 	}, content)
 	round(copy, 10)
-	make("UIGradient", {
-		Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(214, 226, 255)),
-		Rotation = 90,
-	}, copy)
+	if keyMode then
+		copy.BackgroundColor3 = Main
+		copy.TextColor3 = Text
+		copy.FontFace = Medium
+		local edge = make("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Color = Color3.new(1, 1, 1), Thickness = 1, Transparency = 0.35 }, copy)
+		make("UIGradient", { Color = Nebula, Rotation = 10 }, edge)
+	else
+		make("UIGradient", {
+			Color = Metal,
+			Rotation = 90,
+		}, copy)
+	end
 	make("TextLabel", {
 		BackgroundTransparency = 1,
 		FontFace = Regular,
@@ -1160,7 +1244,7 @@ local function showDiscontinued(keyMode, onKey)
 
 	local copied = false
 	local function idleColor()
-		return if copied then Green else Accent
+		return if copied then Green elseif keyMode then Main else Accent
 	end
 	copy.MouseEnter:Connect(function()
 		tween(copy, Quick, { BackgroundColor3 = idleColor():Lerp(Color3.new(1, 1, 1), 0.15) })
@@ -1182,7 +1266,7 @@ local function showDiscontinued(keyMode, onKey)
 			if copy.Parent then
 				copied = false
 				copy.Text = if keyMode then "Get the key: copy Discord link" else "Copy Discord link"
-				tween(copy, Quick, { BackgroundColor3 = Accent })
+				tween(copy, Quick, { BackgroundColor3 = idleColor() })
 			end
 		end)
 	end)
