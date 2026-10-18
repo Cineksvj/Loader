@@ -837,6 +837,26 @@ local function showDiscontinued(keyMode, onKey)
 	}, shell)
 	round(card, 16)
 	local pop = make("UIScale", { Scale = 0.9 }, card)
+	-- perf (owner 2026-10-18): while the key card sits on screen it is a plain Frame; it is a CanvasGroup only to fade in/out
+	local function swapCard(canvas)
+		local new = make(if canvas then "CanvasGroup" else "Frame", {
+			AutomaticSize = card.AutomaticSize,
+			BackgroundColor3 = card.BackgroundColor3,
+			BackgroundTransparency = card.BackgroundTransparency,
+			BorderSizePixel = 0,
+			ClipsDescendants = true,
+			Size = card.Size,
+		}, nil)
+		if canvas then
+			new.GroupTransparency = 0
+		end
+		for _, child in ipairs(card:GetChildren()) do
+			child.Parent = new
+		end
+		new.Parent = shell
+		card:Destroy()
+		card = new
+	end
 
 	-- starfield + constellation behind the content (like the hub's loading card)
 	local sky = make("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 1 }, card)
@@ -1180,6 +1200,9 @@ local function showDiscontinued(keyMode, onKey)
 					end
 				task.spawn(function()
 					task.wait(0.55)
+					if card:IsA("Frame") and not card:IsA("CanvasGroup") then
+						pcall(swapCard, true)
+					end
 					tween(card, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { GroupTransparency = 1 })
 					tween(fit, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = fit.Scale * 1.08 })
 					tween(shellStroke, TweenInfo.new(0.35), { Transparency = 1 })
@@ -1310,8 +1333,6 @@ local function showDiscontinued(keyMode, onKey)
 			end
 		end
 
-		-- the halo breathes
-		tween(halo, TweenInfo.new(1.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { BackgroundTransparency = 0.78, Size = UDim2.new(1, 34, 1, 34) })
 
 		-- silver sparks rising behind the content
 		local sparkRng = Random.new()
@@ -1341,7 +1362,7 @@ local function showDiscontinued(keyMode, onKey)
 		task.spawn(function()
 			while gui.Parent do
 				spark()
-				task.wait(sparkRng:NextNumber(0.15, 0.35))
+				task.wait(sparkRng:NextNumber(0.35, 0.6))
 			end
 		end)
 
@@ -1353,6 +1374,7 @@ local function showDiscontinued(keyMode, onKey)
 			Size = UDim2.fromScale(1, 1),
 			ZIndex = 8,
 		}, card)
+		round(glint, 16)
 		local glintGrad = make("UIGradient", {
 			Rotation = 25,
 			Offset = Vector2.new(-1.2, 0),
@@ -1382,6 +1404,7 @@ local function showDiscontinued(keyMode, onKey)
 				Size = UDim2.fromScale(1, 1),
 				ZIndex = 9,
 			}, card)
+			round(flash, 16)
 			tween(flash, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 })
 			for i = 1, 28 do
 				local angle = (i / 28) * math.pi * 2
@@ -1423,17 +1446,30 @@ local function showDiscontinued(keyMode, onKey)
 	tween(card, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { GroupTransparency = 0 })
 	tween(pop, Open, { Scale = 1 })
 	tween(shellStroke, TweenInfo.new(0.25), { Transparency = 0.1 })
+	if keyMode then
+		task.delay(0.8, function()
+			if gui.Parent and card:IsA("CanvasGroup") and card.GroupTransparency < 0.01 then
+				pcall(swapCard, false)
+			end
+		end)
+	end
 
 
 	-- ambient motion: ring + stroke spin, star twinkle, shooting stars
 	local spin
+	local spinAcc = 0
 	spin = RunService.Heartbeat:Connect(function(dt)
 		if not gui.Parent then
 			spin:Disconnect()
 			return
 		end
-		ringGradient.Rotation = (ringGradient.Rotation + dt * 90) % 360
-		strokeGradient.Rotation = (strokeGradient.Rotation + dt * 25) % 360
+		spinAcc += dt
+		if spinAcc < 1 / 30 then
+			return
+		end
+		ringGradient.Rotation = (ringGradient.Rotation + spinAcc * 90) % 360
+		strokeGradient.Rotation = (strokeGradient.Rotation + spinAcc * 25) % 360
+		spinAcc = 0
 	end)
 	task.spawn(function()
 		local twinkle = TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 0, true)
