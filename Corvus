@@ -942,6 +942,26 @@ local function showDiscontinued(keyMode, onKey)
 		TextSize = 20,
 	}, content)
 	make("UIGradient", { Color = ColorSequence.new(Color3.new(1, 1, 1), Accent:Lerp(Color3.new(1, 1, 1), 0.3)) }, title)
+	if keyMode then
+		title.Size = UDim2.new(1, 0, 0, 20)
+		local badge = make("TextLabel", {
+			AutomaticSize = Enum.AutomaticSize.X,
+			BackgroundColor3 = Accent,
+			BackgroundTransparency = 0.86,
+			BorderSizePixel = 0,
+			FontFace = Bold,
+			LayoutOrder = 2,
+			Size = UDim2.fromOffset(0, 20),
+			Text = "KEY  SYSTEM  \u{00B7}  " .. string.upper(entry and entry.name or "HUB"),
+			TextColor3 = Accent2,
+			TextSize = 11,
+		}, content)
+		round(badge)
+		make("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }, badge)
+		make("UIStroke", { Color = Accent, Transparency = 0.6, Thickness = 1 }, badge)
+		badge.LayoutOrder = 3
+		title.LayoutOrder = 2
+	end
 
 	local divider = make("Frame", {
 		BackgroundColor3 = Accent,
@@ -975,10 +995,11 @@ local function showDiscontinued(keyMode, onKey)
 		BackgroundTransparency = 1,
 		FontFace = Regular,
 		LayoutOrder = 1,
-		LineHeight = 1.1,
+		LineHeight = 1.25,
+		RichText = true,
 		Size = UDim2.new(1, 0, 0, 0),
 		Text = if keyMode
-			then "We're testing how many people really use our hub, so this game now asks for a key. No Linkvertise, no LootLabs, no ads: the key is posted plainly on our Discord and changes only once a week."
+			then '<font color="#84b0ff"><b>1</b></font>  Join our Discord with the button below\n<font color="#84b0ff"><b>2</b></font>  Copy this week\'s key from the key channel\n<font color="#84b0ff"><b>3</b></font>  Paste it here and press Unlock'
 			else "We're sorry, we discontinued updating this game. If you still want the old version, DM @Dalkoski or join our Discord to see which games are supported.",
 		TextColor3 = Text,
 		TextSize = 15,
@@ -991,7 +1012,7 @@ local function showDiscontinued(keyMode, onKey)
 		FontFace = Regular,
 		LayoutOrder = 2,
 		Size = UDim2.new(1, 0, 0, 0),
-		Text = if keyMode then "Enter the key once, it is remembered until next week's key." else "Old versions are no longer maintained, please don't report bugs for them.",
+		Text = if keyMode then "Free key. No ads, no Linkvertise, no LootLabs. It is remembered until next week's key." else "Old versions are no longer maintained, please don't report bugs for them.",
 		TextColor3 = Text,
 		TextSize = 12,
 		TextTransparency = 0.55,
@@ -1036,7 +1057,7 @@ local function showDiscontinued(keyMode, onKey)
 			FontFace = Medium,
 			LayoutOrder = 1,
 			PlaceholderColor3 = Color3.fromRGB(128, 132, 150),
-			PlaceholderText = "Enter key",
+			PlaceholderText = "Paste your key here",
 			Size = UDim2.new(1, -108, 1, 0),
 			Text = "",
 			TextColor3 = Text,
@@ -1044,6 +1065,8 @@ local function showDiscontinued(keyMode, onKey)
 		}, keyRow)
 		round(box, 10)
 		local boxStroke = make("UIStroke", { Color = Outline, Transparency = 0.2, Thickness = 1 }, box)
+			box.Focused:Connect(function() tween(boxStroke, Quick, { Color = Accent, Thickness = 1.5 }) end)
+			box.FocusLost:Connect(function() tween(boxStroke, Quick, { Color = Outline, Thickness = 1 }) end)
 		local unlock = make("TextButton", {
 			AutoButtonColor = false,
 			BackgroundColor3 = Green,
@@ -1069,7 +1092,8 @@ local function showDiscontinued(keyMode, onKey)
 					end
 					writefile(KeyFile, KEY)
 				end)
-				unlock.Text = "Loading..."
+				unlock.Text = "Key accepted"
+					boxStroke.Color = Green
 				tween(card, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { GroupTransparency = 1 })
 				tween(shellStroke, TweenInfo.new(0.3), { Transparency = 1 })
 				task.spawn(function()
@@ -1084,6 +1108,7 @@ local function showDiscontinued(keyMode, onKey)
 				end)
 			else
 				unlock.Text = "Wrong key"
+
 				boxStroke.Color = Color3.fromRGB(235, 90, 90)
 				task.delay(1.5, function()
 					if unlock.Parent and not done then
@@ -1109,7 +1134,7 @@ local function showDiscontinued(keyMode, onKey)
 		FontFace = Bold,
 		LayoutOrder = 7,
 		Size = UDim2.new(1, 0, 0, 40),
-		Text = "Copy Discord link",
+		Text = if keyMode then "Get the key: copy Discord link" else "Copy Discord link",
 		TextColor3 = Back,
 		TextSize = 15,
 	}, content)
@@ -1152,7 +1177,7 @@ local function showDiscontinued(keyMode, onKey)
 		task.delay(2, function()
 			if copy.Parent then
 				copied = false
-				copy.Text = "Copy Discord link"
+				copy.Text = if keyMode then "Get the key: copy Discord link" else "Copy Discord link"
 				tween(copy, Quick, { BackgroundColor3 = Accent })
 			end
 		end)
