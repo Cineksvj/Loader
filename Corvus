@@ -647,7 +647,8 @@ end
 -- Key card (owner 2026-10-18): BSE and Tap Sim ask for a plain weekly key posted on the Discord. No link shorteners.
 -- Change KEY here once a week and upload the loader; a saved key that no longer matches asks again.
 local KEY = "CorvusOnTop"
-local KeyFile = "Corvus/key.txt"
+-- one saved key per game (owner 2026-10-18): a key entered in one game does not unlock the others
+local KeyFile = "Corvus/keys/" .. tostring(game.PlaceId) .. ".txt"
 local function keyMatches(text)
 	return type(text) == "string" and string.lower((string.gsub(text, "%s", ""))) == string.lower(KEY)
 end
@@ -1089,6 +1090,9 @@ local function showDiscontinued(keyMode, onKey)
 				pcall(function()
 					if type(isfolder) == "function" and not isfolder("Corvus") then
 						makefolder("Corvus")
+					end
+					if type(isfolder) == "function" and not isfolder("Corvus/keys") then
+						makefolder("Corvus/keys")
 					end
 					writefile(KeyFile, KEY)
 				end)
