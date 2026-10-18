@@ -1,3 +1,15 @@
+-- LPH_PRECHECK (Luraph v15 anti-dump): the obfuscated bytecode is encrypted with a key derived from the expected return
+-- of this function. The loader DECRYPTS only when game.PlaceId is one of our target games (BSE / TAPSIM / Deep Fishing).
+-- A deobfuscator running the loader in Studio or on a sterile PlaceId gets garbage back; cannot step through it.
+-- NOTE: adding a new game requires re-obfuscating the loader so this list refreshes. Owner 2026-10-18.
+-- Guard: before Luraph processes this file the LPH_* macro is a plain global and does not exist in a raw run; without
+-- the guard the raw loader crashes with "attempt to call a nil value". Luraph strips the whole if-branch during build.
+if type(LPH_PRECHECK) == "function" then
+	LPH_PRECHECK(function()
+		return game.PlaceId
+	end, { 114326934417838, 72858262610964, 132239307080610 })
+end
+
 -- Corvus universal loader: picks the hub for the current game and keeps a live dashboard in Discord.
 -- The stats are two webhook messages that are edited, never re-posted:
 --   StatsMessage (top): one short summary line (online, players today, runs today, record).
@@ -5,46 +17,25 @@
 -- The real dashboard is the desktop app (tools/dashboard) that reads StatsData. Players with Anonymous Mode on
 -- (Info tab) show as "Anonymous". Unique and online players are counted with bitmaps of hashed user ids, so the
 -- stored state stays small no matter how many people play.
--- Filled in by tools/github_upload.py when the loader is uploaded (raw URL of the repo that holds the hubs).
-local Repo = "https://raw.githubusercontent.com/Cineksvj/Corvus/refs/heads/main/"
+-- Baked in by tools/gate_upload.py when the loader is uploaded to the gate worker (owner 2026-10-18 anti-leak).
+-- The weekly key and the hub bytes are NEVER on GitHub any more: the worker checks the key, hands a 60 s token out
+-- and serves the hub with a per-request watermark. GitHub still carries the legacy Loader entries so old rscripts
+-- links keep working, but those are tiny stubs that `game:HttpGet` this gate URL.
+local Gate = "__GATE_URL__"
 local Games = {
-	[111543903102439] = { name = "+1 Stone Skipping", file = "%2B1%20Stone%20Skipping" },
-	[113290951185459] = { name = "Anime Dice", file = "Anime%20Dice" },
-	[96510596525082] = { name = "Ball VS Ball", file = "Ball%20VS%20Ball" },
-	[132767904294856] = { name = "Blue Lock Farm", file = "Blue%20Lock%20Farm" },
-	[114326934417838] = { name = "Break and Steal an Egg", file = "Break%20and%20Steal%20an%20Egg" },
-	[537413528] = { name = "Build A Boat For Treasure", file = "Build%20A%20Boat%20For%20Treasure" },
-	[78490532994307] = { name = "Build An Ant Empire", file = "Build%20An%20Ant%20Empire" },
-	[105011592530400] = { name = "Build and Kill Zombies", file = "Build%20and%20Kill%20Zombies" },
-	[132239307080610] = { name = "Deep Fishing", file = "Deep%20Fishing" },
-	[120656419209274] = { name = "Drill for Eggs", file = "Drill%20for%20Eggs" },
-	[107535308163741] = { name = "Huss Valley", file = "Huss%20Valley" },
-	[118805555015549] = { name = "+1 Loot To Forge", file = "%2B1%20Loot%20To%20Forge" },
-	[88047783411976] = { name = "Open Sea For Animals", file = "Open%20Sea%20For%20Animals" },
-	[74629631798007] = { name = "Pets Universe", file = "Pets%20Universe" },
-	[124216119978534] = { name = "Ride A Pet", file = "Ride%20A%20Pet" },
-	[87740422849523] = { name = "Steal A Car", file = "Steal%20A%20Car" },
-	[99679692310083] = { name = "Steal Animal Egg", file = "Steal%20Animal%20Egg" },
-	[82081400078378] = { name = "Steal ASMR", file = "Steal%20ASMR" },
-	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
-	[72858262610964] = { name = "Tap Simulator Reborn", file = "Tap%20Simulator%20Reborn" },
-	[122245938604556] = { name = "Tongue Escape", file = "Tongue%20Escape" },
-	[185655149] = { name = "Welcome to Bloxburg", file = "Welcome%20to%20Bloxburg" },
+	[114326934417838] = { name = "Break and Steal an Egg", alias = "bse" },
+	[72858262610964] = { name = "Tap Simulator Reborn", alias = "tapsim" },
+	[132239307080610] = { name = "Deep Fishing", alias = "df" },
 }
-local StatsWebhook = (function(hex)
-	local key = "corvus"
-	local out = {}
-	for i = 1, #hex, 2 do
-		local index = (i - 1) // 2
-		out[#out + 1] = string.char(bit32.bxor(tonumber(string.sub(hex, i, i + 1), 16), string.byte(key, index % #key + 1)))
-	end
-	return table.concat(out)
-end)("0b1b060606494c40161f06100c1d1658161c0e4013061c5c140a101e1a1c081c5d474046555b41464542575f444142455a5b41435a05092a2b1d272a542b4333111255094643131f250a3545454657231941191d293e4a4f44462f1e21180f040836473d2c26190c5f2e42143a39201e2d032435104006472f")
+-- GitHub still carries a Repo value for the hub's `Codes.json` and the raven logo asset below; it never serves hubs.
+local Repo = ""
+-- No Discord webhook in the client (owner 2026-10-18): the stats go only to the worker below.
+local StatsWebhook = ""
 local StatsMessage = "1556430209979523195"
 local StatsData = "1556430211346599952"
--- Stats worker (Cloudflare, see tools/dashboard/notes.md). Empty = Discord carrier only. With a URL the heartbeats go
--- there and Discord is used only when the worker does not answer.
-local StatsUrl = "https://corvus-stats.corvushub.workers.dev"
+-- Stats go through the gate worker (owner 2026-10-18 anti-leak layer 2): the gate proxies /beat, /feedback, /logs to
+-- the real stats worker, so the Loader never ships the stats hostname. The gate's own URL is baked in by gate_upload.
+local StatsUrl = Gate
 local Invite ="https://discord.gg/PdQvN2bDCu"
 
 local HttpService = game:GetService("HttpService")
@@ -156,7 +147,7 @@ do
 	end
 	Stats.bitmapSet, Stats.bitmapHas, Stats.bitmapCount = bitmapSet, bitmapHas, bitmapCount
 	function Stats.enabled()
-		return StatsWebhook ~= "" and StatsMessage ~= "" and StatsData ~= "" and not string.find(StatsData, "__")
+		return StatsUrl ~= ""
 	end
 	local function fresh()
 		return { v = 3, g = {}, p = {}, ex = {}, h = {}, wk = {} }
@@ -504,16 +495,8 @@ do
 		return done
 	end
 	function Stats.beat(gameName, isRun)
-		if StatsUrl ~= "" and beatWorker(gameName, isRun) then
-			return
-		end
-		local data = Stats.read()
-		if not data then
-			return
-		end
-		local key, name, executor, info = me()
-		if Stats.update(data, gameName, isRun, key, name, executor, info, os.time()) then
-			Stats.write(data)
+		if StatsUrl ~= "" then
+			beatWorker(gameName, isRun)
 		end
 	end
 	function Stats.start(gameName)
@@ -542,9 +525,314 @@ Env.CorvusStats = Stats
 
 -- Xeno/Solara time out or return empty bodies on the big hub files: fetch with retries and check the size
 -- Returns src, err, seconds. A single download over 20 s is warned about (that is the "nothing shows for minutes" case).
-local function fetchHub(url)
+-- Hardware id used for the per-request watermark the worker adds, and for binding the 60 s token (one game, one HWID).
+-- Not a secret, just a stable string per client-user pair.
+local function corvusHwid()
+	local uid = 0
+	pcall(function()
+		local p = game:GetService("Players").LocalPlayer
+		uid = p and p.UserId or 0
+	end)
+	local exe = "unknown"
+	pcall(function()
+		exe = (type(identifyexecutor) == "function" and (identifyexecutor()) or "unknown") or "unknown"
+	end)
+	return tostring(uid) .. "|" .. tostring(exe)
+end
+local Hwid = corvusHwid()
+Env.CorvusHwid = Hwid
+
+local function httpRequest(options)
+	local fn = (typeof(syn) == "table" and syn.request) or (typeof(http) == "table" and http.request) or http_request or request
+	if type(fn) ~= "function" then
+		return nil
+	end
+	local ok, response = pcall(fn, options)
+	return if ok then response else nil
+end
+
+-- Blacklist of executor names that have been observed stripping watermarks / running RemoteSpy against our hub.
+-- First report = hard auto-ban. Add names here as leakers are identified. Case-insensitive, lowercase strings only.
+local ExecutorBlacklist = {
+	-- example (empty for now): "codex", "chinaexploit",
+}
+-- Immediately tears the session down (library unload + marks CorvusKillSwitched so keepalive stops).
+-- Also drops a notification + console line the leaker will actually see on their screen (owner 2026-10-18 request).
+local function killSelf(why)
+	if Env.CorvusKillSwitched then return end
+	Env.CorvusKillSwitched = true
+	local skidder = "GO FUCK YOURSELF SKIDDER \u{1F602}"
+	warn("[Corvus] " .. skidder .. " (reason: " .. tostring(why) .. ")")
+	print("[Corvus] " .. skidder)
+	pcall(function()
+		game:GetService("StarterGui"):SetCore("SendNotification", {
+			Title = "Corvus",
+			Text = skidder,
+			Duration = 15,
+		})
+	end)
+	pcall(function()
+		local lib = Env.CorvusLibrary
+		if type(lib) == "table" and type(lib.Unload) == "function" and not lib.Unloaded then
+			lib:Unload()
+		end
+	end)
+end
+-- Suspect report. Reads worker's {banned} answer; if banned=true, kills session immediately (worker auto-bans on hard
+-- kinds and after N soft kinds, see worker.js SUSPECT_KINDS / AUTO_BAN_*).
+local function reportSuspect(kind, target)
+	if type(Gate) ~= "string" or Gate == "" or Gate:sub(1, 10) == "__GATE_URL" then return end
+	task.spawn(function()
+		local resp = httpRequest({
+			Url = Gate .. "/report-hook",
+			Method = "POST",
+			Headers = { ["content-type"] = "application/json" },
+			Body = HttpService:JSONEncode({ hwid = Hwid, pid = tostring(game.PlaceId), kind = tostring(kind or "hook"), target = tostring(target or "?") }),
+		})
+		if type(resp) == "table" and (resp.StatusCode or 0) == 200 then
+			local okJson, data = pcall(HttpService.JSONDecode, HttpService, resp.Body or "")
+			if okJson and type(data) == "table" and data.banned == true then
+				killSelf("auto-ban from report (" .. tostring(kind) .. "/" .. tostring(target) .. ")")
+			end
+		end
+	end)
+end
+
+-- Tamper probe (owner 2026-10-18 anti-leak layer 3). Snapshots native functions on first run, re-checks on demand and
+-- in a background thread; mismatches POST to /report-hook. Soft reports (hook/integrity/dump) are reviewed; above
+-- threshold the worker auto-bans. Hard reports (honeypot/exec/chunk/payload) auto-ban on first event.
+local function isNative(fn)
+	if type(fn) ~= "function" then return nil end
+	local ok, info = pcall(debug.getinfo, fn, "S")
+	return ok and info and info.what == "C" or false
+end
+if not Env.CorvusTamperSnap then
+	local snap = {}
+	snap.stringDump = { fn = string.dump, native = isNative(string.dump), tostr = tostring(string.dump) }
+	snap.getrawmetatable = { fn = getrawmetatable, native = isNative(getrawmetatable), tostr = tostring(getrawmetatable) }
+	snap.getupvalue = { fn = debug and debug.getupvalue, native = debug and isNative(debug.getupvalue), tostr = debug and tostring(debug.getupvalue) or "" }
+	snap.setupvalue = { fn = debug and debug.setupvalue, native = debug and isNative(debug.setupvalue), tostr = debug and tostring(debug.setupvalue) or "" }
+	snap.loadstring = { fn = loadstring, native = isNative(loadstring), tostr = tostring(loadstring) }
+	snap.getnamecallmethod = { fn = getnamecallmethod, native = isNative(getnamecallmethod), tostr = tostring(getnamecallmethod) }
+	snap.hookfunction = { fn = hookfunction, native = isNative(hookfunction), tostr = tostring(hookfunction) }
+	snap.hookmetamethod = { fn = hookmetamethod, native = isNative(hookmetamethod), tostr = tostring(hookmetamethod) }
+	-- Keep ONLY probes with low false-positive risk. Removed: task.wait/task.spawn/task.delay (Potassium hooks them),
+	-- game.HttpGet (Rayfield-style libs hook it), Instance.new (many libs hook it), loadstring (executors wrap it for
+	-- safety). Those give false positives on legit players.
+	snap.typeofFn = { fn = typeof, native = isNative(typeof), tostr = tostring(typeof) }
+	snap.pcallFn = { fn = pcall, native = isNative(pcall), tostr = tostring(pcall) }
+	snap.rawget = { fn = rawget, native = isNative(rawget), tostr = tostring(rawget) }
+	snap.rawset = { fn = rawset, native = isNative(rawset), tostr = tostring(rawset) }
+	Env.CorvusTamperSnap = snap
+end
+local function tamperCheck()
+	local snap = Env.CorvusTamperSnap
+	if type(snap) ~= "table" then return {} end
+	local function changed(was, now)
+		if not was or not was.fn then return false end
+		if now.fn ~= was.fn then return true end
+		if was.native and now.native == false then return true end
+		if was.tostr ~= "" and now.tostr ~= was.tostr then return true end
+		return false
+	end
+	-- Only probes safe for legitimate players (see snap above for the dropped ones and why).
+	local probes = {
+		{ name = "stringDump", now = { fn = string.dump, native = isNative(string.dump), tostr = tostring(string.dump) }, target = "string.dump" },
+		{ name = "getrawmetatable", now = { fn = getrawmetatable, native = isNative(getrawmetatable), tostr = tostring(getrawmetatable) }, target = "getrawmetatable" },
+		{ name = "getupvalue", now = { fn = debug and debug.getupvalue, native = debug and isNative(debug.getupvalue), tostr = debug and tostring(debug.getupvalue) or "" }, target = "debug.getupvalue" },
+		{ name = "setupvalue", now = { fn = debug and debug.setupvalue, native = debug and isNative(debug.setupvalue), tostr = debug and tostring(debug.setupvalue) or "" }, target = "debug.setupvalue" },
+		{ name = "getnamecallmethod", now = { fn = getnamecallmethod, native = isNative(getnamecallmethod), tostr = tostring(getnamecallmethod) }, target = "getnamecallmethod" },
+		{ name = "hookfunction", now = { fn = hookfunction, native = isNative(hookfunction), tostr = tostring(hookfunction) }, target = "hookfunction" },
+		{ name = "hookmetamethod", now = { fn = hookmetamethod, native = isNative(hookmetamethod), tostr = tostring(hookmetamethod) }, target = "hookmetamethod" },
+		{ name = "typeofFn", now = { fn = typeof, native = isNative(typeof), tostr = tostring(typeof) }, target = "typeof" },
+		{ name = "pcallFn", now = { fn = pcall, native = isNative(pcall), tostr = tostring(pcall) }, target = "pcall" },
+		{ name = "rawget", now = { fn = rawget, native = isNative(rawget), tostr = tostring(rawget) }, target = "rawget" },
+		{ name = "rawset", now = { fn = rawset, native = isNative(rawset), tostr = tostring(rawset) }, target = "rawset" },
+	}
+	local hits = {}
+	for _, p in ipairs(probes) do
+		if changed(snap[p.name], p.now) then hits[#hits + 1] = p.target end
+	end
+	return hits
+end
+-- Honeypot canary (owner 2026-10-18 anti-leak layer 5). A global function that nothing legitimate ever calls; its NAME
+-- and the obvious doc comment are bait for a dekompiler reading the Loader. If called, auto-ban.
+if not Env.CorvusDebugAccess then
+	-- Deobfuscator reading the Loader will see "DebugAccess" and may try to call it to inspect state. Any call = hard
+	-- auto-ban. Normal players never hit this.
+	Env.CorvusDebugAccess = function(...)
+		reportSuspect("honeypot", "corvus-debug-access")
+		return nil
+	end
+end
+-- _G monitoring (owner 2026-10-18 anti-leak layer 6). Snapshot critical globals at start; any mutation = someone trying
+-- to spoof watermark / HWID. Snapshot early so a tampered Env.CorvusHwid later diverges from the snap.
+if not Env.CorvusGlobalSnap then
+	Env.CorvusGlobalSnap = {
+		Hwid = Hwid,
+		DebugAccessFn = Env.CorvusDebugAccess,
+	}
+end
+local function globalCheck()
+	local gs = Env.CorvusGlobalSnap
+	local hits = {}
+	if type(gs) ~= "table" then return hits end
+	if Env.CorvusHwid ~= gs.Hwid then hits[#hits + 1] = "corvus-hwid" end
+	if Env.CorvusDebugAccess ~= gs.DebugAccessFn then hits[#hits + 1] = "corvus-debug-access-fn" end
+	return hits
+end
+-- Session GUID monitor (owner 2026-10-18 anti-leak layer 9). Unique per session, in-memory only. Any mutation of the
+-- global between its creation and the next check = someone poking around our state.
+if not Env.CorvusSessionGuid then
+	Env.CorvusSessionGuid = HttpService:GenerateGUID(false)
+end
+local SessionGuidAtStart = Env.CorvusSessionGuid
+local function sessionGuidCheck()
+	if Env.CorvusSessionGuid ~= SessionGuidAtStart then
+		return { "session-guid-mutated" }
+	end
+	return {}
+end
+
+-- Timing attack / fake-sleep detection (owner 2026-10-18 anti-leak layer 10). Debuggers that accelerate task.wait
+-- (common when a leaker steps through the loader quickly) finish a 1 s wait in <0.3 s. 0.3-0.9 s is normal server lag
+-- or scheduler jitter and we stay silent. Reported as soft; above AUTO_BAN_SOFT_THRESHOLD = ban.
+task.spawn(function()
+	task.wait(45) -- let the loader settle, otherwise early-start jitter triggers false positives
+	while true do
+		task.wait(90 + math.random() * 30)
+		if Env.CorvusKillSwitched then return end
+		local t0 = os.clock()
+		task.wait(1)
+		local real = os.clock() - t0
+		-- 0.3 s cutoff: real games under lag sometimes serve 0.4-0.7 s; <0.3 s only happens when the scheduler itself
+		-- was tampered (step-debugger, patched RBXSignal). Keep this tight to avoid banning laggy players.
+		if real < 0.3 then
+			reportSuspect("hook", "fake-sleep-" .. tostring(math.floor(real * 1000)) .. "ms")
+		end
+	end
+end)
+
+-- CoreGui spike detection (owner 2026-10-18 anti-leak layer 7). Baselines ScreenGui count after start; a sudden jump
+-- (over +30) matches Dex / RemoteSpy / debugger UI being injected. Threshold 30 (was 15) because a player running two
+-- or three legit hubs alongside ours adds ~20 ScreenGuis and we don't want to ban them.
+local CoreGuiBaseline = nil
+local function coreGuiSpike()
+	local hits = {}
+	local hosts = {
+		(type(gethui) == "function" and gethui()) or nil,
+		game:GetService("CoreGui"),
+	}
+	local total = 0
+	for _, host in ipairs(hosts) do
+		if host then total = total + #host:GetChildren() end
+	end
+	if CoreGuiBaseline == nil then
+		CoreGuiBaseline = total
+		return hits
+	end
+	if total > CoreGuiBaseline + 30 then
+		hits[#hits + 1] = "coregui-spike-" .. tostring(total - CoreGuiBaseline)
+		CoreGuiBaseline = total -- update so we do not spam reports
+	elseif total < CoreGuiBaseline then
+		CoreGuiBaseline = total -- player closed some normal UI
+	end
+	return hits
+end
+-- CoreGui / PlayerGui scan for known inspector tools (Dex, Infinite Yield explorer, Remote Spy UI). Reports hook kind
+-- so the owner can review before banning. Checks run every 45 s so this is cheap.
+local function scanInspectors()
+	local hits = {}
+	local function containsBad(name)
+		local n = string.lower(tostring(name or ""))
+		local bad = { "dex", "remotespy", "remote-spy", "scriptspy", "infiniteyieldexplorer", "simplespy" }
+		for _, b in ipairs(bad) do
+			if string.find(n, b, 1, true) then return b end
+		end
+		return nil
+	end
+	for _, host in ipairs({ (type(gethui) == "function" and gethui()) or nil, game:GetService("CoreGui"), (game:GetService("Players").LocalPlayer and game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")) }) do
+		if host then
+			for _, child in ipairs(host:GetChildren()) do
+				local tag = containsBad(child.Name)
+				if tag then hits[#hits + 1] = tag end
+			end
+		end
+	end
+	return hits
+end
+local function tamperReportAndMaybeKill(reason)
+	local hits = tamperCheck()
+	for _, target in ipairs(hits) do reportSuspect("hook", target) end
+	return #hits > 0
+end
+-- Fast first probe (10 s after loader start) catches hooks installed before our 60 s thread fires.
+task.delay(10, function() if not Env.CorvusKillSwitched then tamperReportAndMaybeKill("startup") end end)
+
+-- Executor fingerprint check (owner 2026-10-18 anti-leak layer 4). Blacklisted executors trigger hard auto-ban on first
+-- /report-hook; missing core APIs trigger a soft report (reviewed by owner).
+do
+	local execName = ""
+	pcall(function() if type(identifyexecutor) == "function" then execName = (identifyexecutor()) or "" end end)
+	local nameLower = string.lower(tostring(execName))
+	for _, bad in ipairs(ExecutorBlacklist) do
+		if nameLower == bad or string.find(nameLower, bad, 1, true) then
+			reportSuspect("exec", nameLower)
+			break
+		end
+	end
+	-- Core APIs any legit executor has. Missing any = LOCAL warn only (we DO NOT report it to /report-hook; otherwise
+	-- a legit player on a lightweight executor would accumulate reports across sessions and eventually hit the ban
+	-- threshold through no fault of their own). The hub itself will fail loudly if it needs a missing API.
+	local missing = {}
+	if type(writefile) ~= "function" then table.insert(missing, "writefile") end
+	if type(readfile) ~= "function" then table.insert(missing, "readfile") end
+	if type(isfile) ~= "function" then table.insert(missing, "isfile") end
+	if type(getgenv) ~= "function" then table.insert(missing, "getgenv") end
+	if #missing > 0 then
+		warn("[Corvus] your executor is missing: " .. table.concat(missing, ", ") .. " — the hub may not fully work")
+	end
+end
+
+-- Posts the typed key to the gate worker and returns a 60 s token or (nil, err). The worker alone decides.
+local function requestToken(key)
+	if type(Gate) ~= "string" or Gate == "" or Gate:sub(1, 10) == "__GATE_URL" then
+		return nil, "gate not configured"
+	end
+	if not entry or type(entry.alias) ~= "string" then
+		return nil, "unsupported game"
+	end
+	tamperReportAndMaybeKill("before-k") -- delayed tamper probe before any token request
+	local payload = HttpService:JSONEncode({
+		key = tostring(key or ""),
+		pid = tostring(game.PlaceId),
+		hwid = Hwid,
+		jid = tostring(game.JobId or ""), -- server-instance binding; token dies if the player hops servers
+		n = (game:GetService("Players").LocalPlayer and game:GetService("Players").LocalPlayer.Name) or "?",
+	})
+	local response = httpRequest({ Url = Gate .. "/k", Method = "POST", Headers = { ["content-type"] = "application/json" }, Body = payload })
+	if type(response) ~= "table" then
+		return nil, "no response"
+	end
+	if (response.StatusCode or 0) >= 500 then
+		return nil, "worker " .. tostring(response.StatusCode)
+	end
+	local okJson, data = pcall(HttpService.JSONDecode, HttpService, response.Body or "")
+	if not okJson or type(data) ~= "table" then
+		return nil, "bad body"
+	end
+	if data.ok and type(data.t) == "string" then
+		return data.t, nil
+	end
+	return nil, tostring(data.err or ("http " .. tostring(response.StatusCode)))
+end
+
+-- Trades a token for the hub Lua (worker adds a watermark line + _G.CorvusLeak). Retries short failures.
+local function fetchHub(token)
+	tamperReportAndMaybeKill("before-h") -- delayed tamper probe before a full hub fetch
 	local lastErr = "empty response"
 	local began = os.clock()
+	local url = Gate .. "/h?t=" .. HttpService:UrlEncode(token) .. "&pid=" .. tostring(game.PlaceId) .. "&hwid=" .. HttpService:UrlEncode(Hwid) .. "&jid=" .. HttpService:UrlEncode(tostring(game.JobId or ""))
 	for attempt = 1, 4 do
 		local tried = os.clock()
 		local ok, src = pcall(game.HttpGet, game, url)
@@ -561,22 +849,97 @@ local function fetchHub(url)
 	return nil, lastErr, os.clock() - began
 end
 
--- The staging loader (OwnerLoader) is the owner's: a start that errors or shows no window within 60 s is re-executed.
-local OwnerMode = string.find(Repo, "/staging/", 1, true) ~= nil
+-- Watermark-only fetch (owner 2026-10-18: cut usage ~10,000x by caching hub bytes locally and only grabbing a fresh
+-- watermark per start). Returns ("mark"\n, nil) or (nil, err). Response is ~150 bytes.
+local function fetchWatermark(token)
+	tamperReportAndMaybeKill("before-w")
+	local url = Gate .. "/w?t=" .. HttpService:UrlEncode(token) .. "&pid=" .. tostring(game.PlaceId) .. "&hwid=" .. HttpService:UrlEncode(Hwid) .. "&jid=" .. HttpService:UrlEncode(tostring(game.JobId or ""))
+	local ok, src = pcall(game.HttpGet, game, url)
+	if ok and type(src) == "string" and #src > 10 and #src < 1024 then
+		return src
+	end
+	return nil, ok and "short watermark response" or tostring(src)
+end
+
+local function fetchVersion()
+	local okReq, text = pcall(function() return game:HttpGet(Gate .. "/v?t=" .. tostring(os.time())) end)
+	if not okReq or type(text) ~= "string" then return nil end
+	local okJson, data = pcall(HttpService.JSONDecode, HttpService, text)
+	return okJson and type(data) == "table" and tonumber(data.ver) or nil
+end
+
+local function cachePaths(alias)
+	return "Corvus/hub_" .. alias .. ".lua", "Corvus/hub_" .. alias .. ".ver"
+end
+
+local function readHubCache(alias)
+	local bodyPath, verPath = cachePaths(alias)
+	local ok, body = pcall(function()
+		return type(isfile) == "function" and isfile(bodyPath) and readfile(bodyPath) or nil
+	end)
+	local okVer, ver = pcall(function()
+		return type(isfile) == "function" and isfile(verPath) and readfile(verPath) or nil
+	end)
+	if ok and type(body) == "string" and #body > 10000 and okVer and type(ver) == "string" then
+		return body, tonumber(ver)
+	end
+	return nil
+end
+
+local function writeHubCache(alias, body, ver)
+	local bodyPath, verPath = cachePaths(alias)
+	pcall(function()
+		if type(isfolder) == "function" and not isfolder("Corvus") then makefolder("Corvus") end
+		writefile(bodyPath, body)
+		writefile(verPath, tostring(ver or 0))
+	end)
+end
 
 -- Downloads and runs the hub. Times go to getgenv().CorvusLoaderTimes; the library adds them to its LOAD log line.
-local function runHub()
+-- `key` is the plain weekly key (read from the saved file or from the key card).
+-- 2026-10-18 usage optimisation: if we already have the current version in the local hub cache we only fetch /w
+-- (a ~150-byte watermark + kill-check) instead of /h (1.7-2 MB).
+local function runHub(key)
 	local times = { begin = os.clock() }
 	Env.CorvusLoaderTimes = times
-	local src, err, took = fetchHub(Repo .. entry.file)
-	times.fetch = took
-	if not src then
-		error("download failed: " .. tostring(err))
+	local token, tokErr = requestToken(key)
+	if not token then
+		error("key check failed: " .. tostring(tokErr))
+	end
+	local alias = entry and entry.alias
+	local wantedVer = fetchVersion()
+	local cachedBody, cachedVer
+	if alias then
+		cachedBody, cachedVer = readHubCache(alias)
+	end
+	local src
+	if cachedBody and cachedVer and wantedVer and cachedVer == wantedVer then
+		-- Cache is current; just grab a fresh watermark + kill-check, then run cached body.
+		local mark, markErr = fetchWatermark(token)
+		if not mark then
+			-- Watermark fetch failed (e.g. banned / 429). Fall through to full /h so the server can refuse with context.
+			local full, err, took = fetchHub(token)
+			times.fetch = took
+			if not full then error("download failed: " .. tostring(err)) end
+			src = full
+			if alias and wantedVer then writeHubCache(alias, full, wantedVer) end
+			print(string.format("[Corvus] LOAD cache-miss fetch=%.1f", times.fetch or 0))
+		else
+			times.fetch = 0
+			src = mark .. cachedBody
+			print(string.format("[Corvus] LOAD cache-hit ver=%d bytes=%d", cachedVer, #cachedBody))
+		end
+	else
+		local full, err, took = fetchHub(token)
+		times.fetch = took
+		if not full then error("download failed: " .. tostring(err)) end
+		src = full
+		if alias and wantedVer then writeHubCache(alias, full, wantedVer) end
+		print(string.format("[Corvus] LOAD full fetch=%.1f bytes=%d", times.fetch or 0, #full))
 	end
 	local compiledAt = os.clock()
 	local fn, compileErr = loadstring(src)
 	times.compile = os.clock() - compiledAt
-	print(string.format("[Corvus] LOAD fetch=%.1f compile=%.1f", times.fetch or 0, times.compile))
 	if not fn then
 		error("compile failed: " .. tostring(compileErr))
 	end
@@ -644,19 +1007,44 @@ local function corvusLogo()
 	return if ok and type(id) == "string" and id ~= "" then id else nil
 end
 
--- Key card (owner 2026-10-18): BSE and Tap Sim ask for a plain weekly key posted on the Discord. No link shorteners.
--- Change KEY here once a week and upload the loader; a saved key that no longer matches asks again.
-local KEY = "CorvusOnTop"
--- one saved key per game (owner 2026-10-18): a key entered in one game does not unlock the others
+-- Key card (owner 2026-10-18 leak): the plain weekly key is NO LONGER inside this file. The loader POSTs the typed
+-- key to the gate worker (/k), and the worker alone decides. One saved key per game (same file as before, but we
+-- now trust the worker to validate it on every run). A key that no longer works triggers the key card again.
 local KeyFile = "Corvus/keys/" .. tostring(game.PlaceId) .. ".txt"
-local function keyMatches(text)
-	return type(text) == "string" and string.lower((string.gsub(text, "%s", ""))) == string.lower(KEY)
+local function normalKey(text)
+	if type(text) ~= "string" then
+		return ""
+	end
+	return (string.gsub(text, "%s", ""))
 end
 local function keySaved()
 	local ok, text = pcall(function()
 		return type(isfile) == "function" and isfile(KeyFile) and readfile(KeyFile) or nil
 	end)
-	return ok and keyMatches(text)
+	if ok and type(text) == "string" and normalKey(text) ~= "" then
+		return text
+	end
+	return nil
+end
+local function writeSavedKey(text)
+	pcall(function()
+		if type(isfolder) == "function" and not isfolder("Corvus") then
+			makefolder("Corvus")
+		end
+		if type(isfolder) == "function" and not isfolder("Corvus/keys") then
+			makefolder("Corvus/keys")
+		end
+		writefile(KeyFile, text)
+	end)
+end
+local function clearSavedKey()
+	pcall(function()
+		if type(delfile) == "function" and type(isfile) == "function" and isfile(KeyFile) then
+			delfile(KeyFile)
+		elseif type(writefile) == "function" then
+			writefile(KeyFile, "")
+		end
+	end)
 end
 
 local function showDiscontinued(keyMode, onKey)
@@ -1178,54 +1566,64 @@ local function showDiscontinued(keyMode, onKey)
 		make("UIGradient", { Color = Metal, Rotation = 90 }, unlock)
 		sheen(unlock, 10)
 		local done = false
+		local busy = false
 		local function submit()
-			if done then
+			if done or busy then
 				return
 			end
-			if keyMatches(box.Text) then
-				done = true
-				pcall(function()
-					if type(isfolder) == "function" and not isfolder("Corvus") then
-						makefolder("Corvus")
-					end
-					if type(isfolder) == "function" and not isfolder("Corvus/keys") then
-						makefolder("Corvus/keys")
-					end
-					writefile(KeyFile, KEY)
-				end)
-				unlock.Text = "Key accepted"
+			local typed = box.Text
+			if normalKey(typed) == "" then
+				return
+			end
+			busy = true
+			unlock.Text = "Checking..."
+			boxStroke.Color = Outline
+			task.spawn(function()
+				local token, err = requestToken(typed)
+				busy = false
+				if token then
+					done = true
+					writeSavedKey(typed)
+					unlock.Text = "Key accepted"
 					boxStroke.Color = Green
 					if unlockFx then
 						pcall(unlockFx)
 					end
-				task.spawn(function()
-					task.wait(0.55)
-					if card:IsA("Frame") and not card:IsA("CanvasGroup") then
-						pcall(swapCard, true)
+					task.spawn(function()
+						task.wait(0.55)
+						if card:IsA("Frame") and not card:IsA("CanvasGroup") then
+							pcall(swapCard, true)
+						end
+						tween(card, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { GroupTransparency = 1 })
+						tween(fit, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = fit.Scale * 1.08 })
+						tween(shellStroke, TweenInfo.new(0.35), { Transparency = 1 })
+						task.wait(0.4)
+						pcall(gui.Destroy, gui)
+						if Env.CorvusNoticeGui == gui then
+							Env.CorvusNoticeGui = nil
+						end
+						if type(onKey) == "function" then
+							onKey(typed)
+						end
+					end)
+				else
+					local short = tostring(err or "wrong key")
+					if short == "wrong key" or short == "bad request" or short == "unsupported game" then
+						unlock.Text = "Wrong key"
+					elseif short == "slow" then
+						unlock.Text = "Too many tries"
+					else
+						unlock.Text = "Try again"
 					end
-					tween(card, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { GroupTransparency = 1 })
-					tween(fit, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = fit.Scale * 1.08 })
-					tween(shellStroke, TweenInfo.new(0.35), { Transparency = 1 })
-					task.wait(0.4)
-					pcall(gui.Destroy, gui)
-					if Env.CorvusNoticeGui == gui then
-						Env.CorvusNoticeGui = nil
-					end
-					if type(onKey) == "function" then
-						onKey()
-					end
-				end)
-			else
-				unlock.Text = "Wrong key"
-
-				boxStroke.Color = Color3.fromRGB(235, 90, 90)
-				task.delay(1.5, function()
-					if unlock.Parent and not done then
-						unlock.Text = "Unlock"
-						boxStroke.Color = Outline
-					end
-				end)
-			end
+					boxStroke.Color = Color3.fromRGB(235, 90, 90)
+					task.delay(1.5, function()
+						if unlock.Parent and not done then
+							unlock.Text = "Unlock"
+							boxStroke.Color = Outline
+						end
+					end)
+				end
+			end)
 		end
 		unlock.MouseButton1Click:Connect(submit)
 		box.FocusLost:Connect(function(enter)
@@ -1528,123 +1926,131 @@ if entry and not Supported[game.PlaceId] and Env.CorvusShowDiscontinued == true 
 	warn("[Corvus] " .. entry.name .. " is no longer supported (hub discontinued).")
 elseif entry then
 	Stats.start(entry.name)
-	local function startHub()
-	local ok, result = true, nil
-	if OwnerMode then
-		for attempt = 1, 4 do
-			-- a re-run must not be stopped by the hub's own "Already starting" guard
-			Env.CorvusLoaded, Env.CorvusBooting, Env.CorvusLastError = nil, nil, nil
-			local state = { done = false }
-			local thread = task.spawn(function()
-				local okRun, err = pcall(runHub)
-				state.ok, state.err, state.done = okRun, err, true
-			end)
-			local started, sawError = os.clock(), nil
-			while not state.done and os.clock() - started < 60 do
-				if type(Env.CorvusLastError) == "string" then
-					sawError = Env.CorvusLastError
-				end
-				task.wait(0.5)
-			end
-			sawError = sawError or (if type(Env.CorvusLastError) == "string" then Env.CorvusLastError else nil)
-			local reason
-			if state.done and not state.ok then
-				reason = "error: " .. tostring(state.err)
-			elseif state.done and sawError then
-				reason = "error: " .. tostring(sawError)
-			elseif not state.done and not Env.CorvusLoaded then
-				reason = "no window after 60 s"
-			end
-			if not reason then
-				break
-			end
-			ok, result = false, reason
-			if attempt == 4 then
-				Env.CorvusLastError = sawError or ("[Corvus] " .. entry.name .. " failed to load:\n" .. reason)
-				break
-			end
-			warn(string.format("[Corvus] owner: start attempt %d failed (%s), re-executing (%d left)", attempt, string.sub(reason, 1, 200), 4 - attempt))
-			if not state.done then
-				pcall(task.cancel, thread)
-			end
-			-- the next run's library closes the old window; close it here too in case the old run hangs half built
-			pcall(function()
-				local old = Env.CorvusLibrary
-				if type(old) == "table" and not old.Unloaded and type(old.Unload) == "function" then
-					old:Unload()
-				end
-			end)
-			task.wait(1)
+	local function startHub(key)
+		if type(key) ~= "string" or normalKey(key) == "" then
+			warn("[Corvus] no key, cannot start")
+			return
 		end
-		if not ok then
-			warn("[Corvus] Failed to load " .. entry.name .. " after 4 tries: " .. tostring(result))
-		end
-	else
-		ok, result = pcall(runHub)
+		local ok, result = pcall(function() return runHub(key) end)
 		if not ok then
 			warn("[Corvus] Failed to load " .. entry.name .. ": " .. tostring(result))
 			Env.CorvusLastError = "[Corvus] " .. entry.name .. " failed to load:\n" .. tostring(result)
-		end
-	end
-	if Env.CorvusLastError then
-		-- report the start error right away instead of waiting for the next heartbeat
-		task.spawn(pcall, Stats.beat, entry.name, false)
-	end
-	-- Auto update: tools/github_upload.py keeps "Versions" ({hub name: hash}) next to the hubs. Every 3-4 minutes the
-	-- loader compares it and, when this game's hub changed, loads the new one (the library closes the old window and
-	-- the old instance stops itself). getgenv().CorvusAutoUpdate = false turns it off.
-	if not Env.CorvusUpdateWatcher then
-		Env.CorvusUpdateWatcher = true
-		task.spawn(function()
-			local jsonService = game:GetService("HttpService")
-			local function version()
-				local ok, text = pcall(function()
-					return game:HttpGet(Repo .. "Versions?t=" .. tostring(os.time()))
-				end)
-				if not ok or type(text) ~= "string" then
-					return nil
-				end
-				local okJson, data = pcall(jsonService.JSONDecode, jsonService, text)
-				return okJson and type(data) == "table" and data[entry.name] or nil
+			-- a key the worker rejected invalidates the saved file: next run shows the card again
+			if string.find(tostring(result), "wrong key", 1, true) or string.find(tostring(result), "key check failed", 1, true) then
+				clearSavedKey()
 			end
-			local current = version()
-			-- players complained about reloads every 30 min on busy days: check every 15 min, reload at most once per 2 h
-			local lastReload = 0
-			while true do
-				task.wait(900 + math.random() * 120)
-				local latest = version()
-				if latest and current == nil then
-					current = latest
-				elseif latest and latest ~= current and Env.CorvusAutoUpdate ~= false and os.clock() - lastReload >= 7200 then
-					current = latest
-					lastReload = os.clock()
-					pcall(function()
-						game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Corvus", Text = "New version found, updating the hub...", Duration = 6 })
+		end
+		if Env.CorvusLastError then
+			task.spawn(pcall, Stats.beat, entry.name, false)
+		end
+		-- Auto update: the worker bumps GET /v on every hub upload. Every ~15 min we re-check /v, and when it changed
+		-- we re-fetch /h with a fresh /k token (the saved key is used again, invisibly to the player).
+		if not Env.CorvusUpdateWatcher then
+			Env.CorvusUpdateWatcher = true
+			task.spawn(function()
+				local function version()
+					local okReq, text = pcall(function()
+						return game:HttpGet(Gate .. "/v?t=" .. tostring(os.time()))
 					end)
-					local okLoad, err = pcall(function()
-						local src, fetchErr = fetchHub(Repo .. entry.file .. "?v=" .. latest)
-						if not src then
-							error(fetchErr)
+					if not okReq or type(text) ~= "string" then
+						return nil
+					end
+					local okJson, data = pcall(HttpService.JSONDecode, HttpService, text)
+					return okJson and type(data) == "table" and tonumber(data.ver) or nil
+				end
+				local current = version()
+				local lastReload = 0
+				while true do
+					task.wait(900 + math.random() * 120)
+					local latest = version()
+					if latest and current == nil then
+						current = latest
+					elseif latest and latest ~= current and Env.CorvusAutoUpdate ~= false and os.clock() - lastReload >= 7200 then
+						current = latest
+						lastReload = os.clock()
+						pcall(function()
+							game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Corvus", Text = "New version found, updating the hub...", Duration = 6 })
+						end)
+						local saved = keySaved()
+						if type(saved) == "string" then
+							local okLoad, err = pcall(function() return runHub(saved) end)
+							if not okLoad then
+								warn("[Corvus] Update failed: " .. tostring(err))
+							end
+						else
+							warn("[Corvus] Update skipped: no saved key")
 						end
-						return loadstring(src)()
-					end)
-					if not okLoad then
-						warn("[Corvus] Update failed: " .. tostring(err))
 					end
 				end
-			end
-		end)
+			end)
+		end
+		-- Background tamper probe + inspector scanner (owner 2026-10-18 anti-leak layer 3+5). Uses global tamperCheck()
+		-- and scanInspectors(); hook kinds flow through reportSuspect(). Worker auto-bans soft reports after
+		-- AUTO_BAN_SOFT_THRESHOLD events and hard reports (honeypot/exec/chunk) on the first event.
+		if not Env.CorvusAntiTamper then
+			Env.CorvusAntiTamper = true
+			task.spawn(function()
+				while true do
+					task.wait(45 + math.random() * 30)
+					if Env.CorvusKillSwitched then return end
+					for _, target in ipairs(tamperCheck()) do reportSuspect("hook", target) end
+					for _, target in ipairs(scanInspectors()) do reportSuspect("hook", "inspector-" .. target) end
+					for _, target in ipairs(globalCheck()) do reportSuspect("integrity", target) end
+					for _, target in ipairs(coreGuiSpike()) do reportSuspect("hook", target) end
+				end
+			end)
+		end
+		-- Session keep-alive + kill switch (owner 2026-10-18 anti-leak layer 2). Every ~5 min the loader POSTs the HWID
+		-- to the gate /ping. If the gate says {kill:true}, the hub tears itself down (library:Unload) and the loader
+		-- stops the heartbeat. A `python tools/gate_kill.py add <hwidHash>` call ends a leaker's session worldwide.
+		if not Env.CorvusKeepalive then
+			Env.CorvusKeepalive = true
+			task.spawn(function()
+				while true do
+					-- 2026-10-18 usage cut: keepalive every ~10 min (was 5) halves /ping calls; session kill still arrives
+					-- within one window after `python tools/gate_kill.py add`.
+					task.wait(600 + math.random() * 120)
+					if Env.CorvusKillSwitched then
+						return
+					end
+					local payload = HttpService:JSONEncode({ hwid = Hwid, pid = tostring(game.PlaceId) })
+					local response = httpRequest({ Url = Gate .. "/ping", Method = "POST", Headers = { ["content-type"] = "application/json" }, Body = payload })
+					if type(response) == "table" and (response.StatusCode or 0) == 200 then
+						local okJson, data = pcall(HttpService.JSONDecode, HttpService, response.Body or "")
+						if okJson and type(data) == "table" and data.kill == true then
+							Env.CorvusKillSwitched = true
+							warn("[Corvus] session ended by operator: " .. tostring(data.why or "banned"))
+							pcall(function()
+								local lib = Env.CorvusLibrary
+								if type(lib) == "table" and type(lib.Unload) == "function" and not lib.Unloaded then
+									lib:Unload()
+								end
+							end)
+							return
+						end
+					end
+				end
+			end)
+		end
 	end
-	end
-	-- the weekly key (owner 2026-10-18); the owner's staging loader skips it
-	if OwnerMode or keySaved() then
-		startHub()
+	local saved = keySaved()
+	if type(saved) == "string" then
+		startHub(saved)
 	else
 		local shown = pcall(showDiscontinued, true, startHub)
 		if not shown then
-			startHub()
+			warn("[Corvus] key card could not be shown")
 		end
 	end
 else
 	warn("[Corvus] This game is not supported yet: " .. tostring(game.PlaceId))
+	local names = {}
+	for _, g in pairs(Games) do
+		table.insert(names, g.name)
+	end
+	table.sort(names)
+	warn("[Corvus] Supported games:")
+	for _, name in ipairs(names) do
+		warn("[Corvus] " .. name)
+	end
 end
