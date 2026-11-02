@@ -28,6 +28,7 @@ local Games = {
 	[82081400078378] = { name = "Steal ASMR", file = "Steal%20ASMR" },
 	[120475074479690] = { name = "Steal From The Rich", file = "Steal%20From%20The%20Rich" },
 	[72858262610964] = { name = "Tap Simulator Reborn", file = "Tap%20Simulator%20Reborn" },
+	[120219252362013] = { name = "Throw Food For Animals", file = "Throw%20Food%20For%20Animals" },
 	[122245938604556] = { name = "Tongue Escape", file = "Tongue%20Escape" },
 	[185655149] = { name = "Welcome to Bloxburg", file = "Welcome%20to%20Bloxburg" },
 }
