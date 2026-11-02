@@ -649,6 +649,12 @@ end
 -- Change KEY here once a week and upload the loader; a saved key that no longer matches asks again.
 -- Keys are stored per-PlaceId in Corvus/keys/<PlaceId>.txt so each game is unlocked independently.
 local KEY = "CorvusOnTop"
+-- owner 2026-11-02: the three current hubs are keyless (rscripts say so); no key card, straight to the hub
+local Keyless = {
+	[114326934417838] = true, -- Break and Steal an Egg
+	[72858262610964] = true,  -- Tap Simulator Reborn
+	[120219252362013] = true, -- Throw Food For Animals
+}
 local function keyFilePath()
 	return "Corvus/keys/" .. tostring(game.PlaceId) .. ".txt"
 end
@@ -1362,7 +1368,7 @@ elseif entry then
 	end
 	end
 	-- the weekly key (owner 2026-10-18); the owner's staging loader skips it
-	if OwnerMode or keySaved() then
+	if OwnerMode or Keyless[game.PlaceId] == true or keySaved() then
 		startHub()
 	else
 		local shown = pcall(showDiscontinued, true, startHub)
