@@ -21,6 +21,8 @@ local Games = {
 	[107535308163741] = { name = "Huss Valley", file = "Huss%20Valley" },
 	[118805555015549] = { name = "+1 Loot To Forge", file = "%2B1%20Loot%20To%20Forge" },
 	[88047783411976] = { name = "Open Sea For Animals", file = "Open%20Sea%20For%20Animals" },
+	[117533937949084] = { name = "Iron Soul: Dungeon", file = "Iron%20Soul%3A%20Dungeon" }, -- lobby
+	[116456628154258] = { name = "Iron Soul: Dungeon", file = "Iron%20Soul%3A%20Dungeon" }, -- world (rounds)
 	[74629631798007] = { name = "Pets Universe", file = "Pets%20Universe" },
 	[124216119978534] = { name = "Ride A Pet", file = "Ride%20A%20Pet" },
 	[87740422849523] = { name = "Steal A Car", file = "Steal%20A%20Car" },
@@ -654,6 +656,8 @@ local Keyless = {
 	[114326934417838] = true, -- Break and Steal an Egg
 	[72858262610964] = true,  -- Tap Simulator Reborn
 	[120219252362013] = true, -- Throw Food For Animals
+	[117533937949084] = true, -- Iron Soul: Dungeon (lobby)
+	[116456628154258] = true, -- Iron Soul: Dungeon (world)
 }
 local function keyFilePath()
 	return "Corvus/keys/" .. tostring(game.PlaceId) .. ".txt"
