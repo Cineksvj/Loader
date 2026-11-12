@@ -650,12 +650,9 @@ end
 -- Key card (owner 2026-10-19): every supported game asks for the weekly key posted on the Discord. No link shorteners.
 -- Change KEY here once a week and upload the loader; a saved key that no longer matches asks again.
 -- Keys are stored per-PlaceId in Corvus/keys/<PlaceId>.txt so each game is unlocked independently.
-local KEY = "CorvusOnTop"
--- owner 2026-11-12: BSE, Tap Simulator Reborn and Throw Food For Animals ask for the key again; only Iron Soul stays keyless
-local Keyless = {
-	[117533937949084] = true, -- Iron Soul: Dungeon (lobby)
-	[116456628154258] = true, -- Iron Soul: Dungeon (world)
-}
+local KEY = "CorvusOnTheTop"
+-- owner 2026-11-12: every game on the repo asks for the key (no keyless games); an old saved key no longer matches, so it asks again
+local Keyless = {}
 local function keyFilePath()
 	return "Corvus/keys/" .. tostring(game.PlaceId) .. ".txt"
 end
