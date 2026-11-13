@@ -18,6 +18,7 @@ local Games = {
 	[105011592530400] = { name = "Build and Kill Zombies", file = "Build%20and%20Kill%20Zombies" },
 	[132239307080610] = { name = "Deep Fishing", file = "Deep%20Fishing" },
 	[120656419209274] = { name = "Drill for Eggs", file = "Drill%20for%20Eggs" },
+	[137629355240872] = { name = "GloryBound", file = "GloryBound" },
 	[107535308163741] = { name = "Huss Valley", file = "Huss%20Valley" },
 	[118805555015549] = { name = "+1 Loot To Forge", file = "%2B1%20Loot%20To%20Forge" },
 	[88047783411976] = { name = "Open Sea For Animals", file = "Open%20Sea%20For%20Animals" },
